@@ -4,7 +4,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from .db import pool
+from .db import connection
 
 
 def _one(cur) -> dict[str, Any] | None:
@@ -20,7 +20,7 @@ def insert_agent(
     criticality: str,
     data_classification: str,
 ) -> dict:
-    with pool().connection() as conn, conn.cursor() as cur:
+    with connection() as conn, conn.cursor() as cur:
         cur.execute(
             """INSERT INTO agent
                  (name, tenant, owner_team, purpose, criticality, data_classification)
@@ -29,23 +29,21 @@ def insert_agent(
             (name, tenant, owner_team, purpose, criticality, data_classification),
         )
         row = cur.fetchone()
-        conn.commit()
         return row
 
 
 def get_agent(tenant: str, name: str) -> dict | None:
-    with pool().connection() as conn, conn.cursor() as cur:
+    with connection() as conn, conn.cursor() as cur:
         cur.execute("SELECT * FROM agent WHERE tenant = %s AND name = %s", (tenant, name))
         return _one(cur)
 
 
 def retire_agent(tenant: str, name: str) -> None:
-    with pool().connection() as conn, conn.cursor() as cur:
+    with connection() as conn, conn.cursor() as cur:
         cur.execute(
             "UPDATE agent SET retired_at = now() WHERE tenant = %s AND name = %s",
             (tenant, name),
         )
-        conn.commit()
 
 
 def insert_version(
@@ -58,7 +56,7 @@ def insert_version(
     eval_suite: str | None,
     created_by: str,
 ) -> dict:
-    with pool().connection() as conn, conn.cursor() as cur:
+    with connection() as conn, conn.cursor() as cur:
         cur.execute(
             """INSERT INTO agent_version
                  (agent_id, semver, manifest_json, manifest_hash, git_commit,
@@ -76,12 +74,11 @@ def insert_version(
             ),
         )
         row = cur.fetchone()
-        conn.commit()
         return row
 
 
 def get_version(agent_id: int, semver: str) -> dict | None:
-    with pool().connection() as conn, conn.cursor() as cur:
+    with connection() as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT * FROM agent_version WHERE agent_id = %s AND semver = %s",
             (agent_id, semver),
@@ -90,7 +87,7 @@ def get_version(agent_id: int, semver: str) -> dict | None:
 
 
 def get_active_version(agent_id: int) -> dict | None:
-    with pool().connection() as conn, conn.cursor() as cur:
+    with connection() as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT * FROM agent_version WHERE agent_id = %s AND state = 'active'",
             (agent_id,),
@@ -99,18 +96,16 @@ def get_active_version(agent_id: int) -> dict | None:
 
 
 def set_state(version_id: int, state: str) -> None:
-    with pool().connection() as conn, conn.cursor() as cur:
+    with connection() as conn, conn.cursor() as cur:
         cur.execute("UPDATE agent_version SET state = %s WHERE id = %s", (state, version_id))
-        conn.commit()
 
 
 def set_eval_result(version_id: int, eval_result: dict, suite: str) -> None:
-    with pool().connection() as conn, conn.cursor() as cur:
+    with connection() as conn, conn.cursor() as cur:
         cur.execute(
             "UPDATE agent_version SET eval_result = %s, eval_suite = %s WHERE id = %s",
             (Jsonb(eval_result), suite, version_id),
         )
-        conn.commit()
 
 
 def insert_promotion(
@@ -121,7 +116,7 @@ def insert_promotion(
     approver: str,
     decision: str,
 ) -> dict:
-    with pool().connection() as conn, conn.cursor() as cur:
+    with connection() as conn, conn.cursor() as cur:
         cur.execute(
             """INSERT INTO promotion
                  (from_version, to_version, gate_results_json, approver, decision)
@@ -130,34 +125,31 @@ def insert_promotion(
             (from_version, to_version, Jsonb(gate_results), approver, decision),
         )
         row = cur.fetchone()
-        conn.commit()
         return row
 
 
 def insert_deployment(
     *, version_id: int, env: str, deployed_by: str, config_hash: str | None
 ) -> dict:
-    with pool().connection() as conn, conn.cursor() as cur:
+    with connection() as conn, conn.cursor() as cur:
         cur.execute(
             """INSERT INTO deployment (version_id, env, config_hash, deployed_by)
                VALUES (%s, %s, %s, %s) RETURNING id, env, deployed_at""",
             (version_id, env, config_hash, deployed_by),
         )
         row = cur.fetchone()
-        conn.commit()
         return row
 
 
 def insert_dependencies(version_id: int, deps: list[tuple[str, str]]) -> None:
     if not deps:
         return
-    with pool().connection() as conn, conn.cursor() as cur:
+    with connection() as conn, conn.cursor() as cur:
         cur.executemany(
             """INSERT INTO dependency (version_id, kind, ref)
                VALUES (%s, %s, %s) ON CONFLICT DO NOTHING""",
             [(version_id, kind, ref) for kind, ref in deps],
         )
-        conn.commit()
 
 
 def insert_audit(
@@ -171,7 +163,7 @@ def insert_audit(
     detail: dict | None = None,
     source_ip: str | None = None,
 ) -> None:
-    with pool().connection() as conn, conn.cursor() as cur:
+    with connection() as conn, conn.cursor() as cur:
         cur.execute(
             """INSERT INTO audit_event
                  (actor, action, object_type, object_id, before_hash, after_hash, detail, source_ip)
@@ -187,7 +179,6 @@ def insert_audit(
                 source_ip,
             ),
         )
-        conn.commit()
 
 
 def list_agents(tenant: str | None = None, owner: str | None = None) -> list[dict]:
@@ -204,14 +195,14 @@ def list_agents(tenant: str | None = None, owner: str | None = None) -> list[dic
         sql += " AND a.owner_team = %s"
         params.append(owner)
     sql += " ORDER BY a.tenant, a.name"
-    with pool().connection() as conn, conn.cursor() as cur:
+    with connection() as conn, conn.cursor() as cur:
         cur.execute(sql, params)
         return cur.fetchall()
 
 
 def active_scopes_by_team(tenant: str) -> list[dict]:
     """Çakışma kontrolü: kiracıdaki aktif ajanların kapsamları."""
-    with pool().connection() as conn, conn.cursor() as cur:
+    with connection() as conn, conn.cursor() as cur:
         cur.execute(
             """SELECT a.name, a.owner_team, v.semver, v.manifest_json->'data_scopes' AS scopes
                FROM agent a JOIN agent_version v ON v.agent_id = a.id
@@ -234,6 +225,6 @@ def audit_events(
         params.append(object_id)
     sql += " ORDER BY id DESC LIMIT %s"
     params.append(limit)
-    with pool().connection() as conn, conn.cursor() as cur:
+    with connection() as conn, conn.cursor() as cur:
         cur.execute(sql, params)
         return cur.fetchall()

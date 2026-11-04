@@ -122,6 +122,41 @@ def test_manifest_owner_must_match_registered_team(client):
     assert r.json()["error"] == "owner_mismatch"
 
 
+def test_promote_runs_gate_server_side(client):
+    _register(client)
+    client.post(f"{BASE}/versions", json={"manifest": dict(MANIFEST, tools=["ghost_tool"])})
+    assert client.post(f"{BASE}/versions/2.3.1:validate", json=EVAL).status_code == 200
+
+    r = client.post(f"{BASE}/versions/2.3.1:promote", json={})
+    assert r.status_code == 409
+    assert r.json()["error"] == "gate_failed"
+
+    # sürüm aktif olmadı ve reddedilen terfi denetim izine yazıldı
+    assert client.get(f"{BASE}/resolve").status_code == 404
+    events = client.get("/v1/audit", params={"object_type": "version"}).json()["events"]
+    assert any(e["action"] == "version.promote_rejected" for e in events)
+
+
+def test_promote_rolls_back_on_failure(client, monkeypatch):
+    _register(client)
+    _create_version(client, "2.3.1")
+    client.post(f"{BASE}/versions/2.3.1:validate", json=EVAL)
+    assert client.post(f"{BASE}/versions/2.3.1:promote", json={}).status_code == 200
+
+    _create_version(client, "2.4.0")
+    client.post(f"{BASE}/versions/2.4.0:validate", json=EVAL)
+
+    def boom(**_kwargs):
+        raise RuntimeError("deployment yazılamadı")
+
+    monkeypatch.setattr("agent_registry.store.insert_deployment", boom)
+    with pytest.raises(RuntimeError):
+        client.post(f"{BASE}/versions/2.4.0:promote", json={})
+
+    # yarım kalan terfi geri alındı: önceki sürüm aktif kaldı
+    assert client.get(f"{BASE}/resolve").json()["version"] == "2.3.1"
+
+
 def test_block_requires_security_role(client):
     _register(client)
     _create_version(client)

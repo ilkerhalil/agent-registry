@@ -29,9 +29,11 @@ Tasarım gerekçeleri `PLAN.md`'de. Kod yazmadan önce orayı oku.
 3. **`resolve` imzasız dönmez.** İmza `build_signed_payload()` gövdesi üzerinedir; runtime aynı
    biçimi doğrular. İmzayı opsiyonel yapma.
 4. **`audit_event` append-only.** UPDATE/DELETE trigger ile reddedilir.
-5. **Kapı fail-closed.** `run_gate()` içinde bir kontrol çalıştırılamıyorsa `passed=False`.
-   "Bilmiyorum" asla "geçti" sayılmaz.
+5. **Kapı fail-closed ve sunucu tarafında.** `run_gate()` içinde bir kontrol çalıştırılamıyorsa
+   `passed=False`. "Bilmiyorum" asla "geçti" sayılmaz. `promote` kapıyı registry'de yeniden
+   koşar; istemcinin gönderdiği `gate_results`'a güvenilmez.
 6. **Tenant izolasyonu servis katmanında.** `resolve` yalnız kendi kiracısını çözer.
+   (Not: v0.1'de kimlik doğrulama katmanı yok — bu invariant henüz hedeftir.)
 7. **Registry elle düzenlenmez.** Doğruluk kaynağı Git'teki manifestlerdir; registry onların
    indeksidir. "Kolaylık olsun" diye yazma ucu ekleme.
 
@@ -73,10 +75,11 @@ DB olmadan testler koşmaz — `conftest.py` şemayı uygular ve tabloları trun
 
 ## Durum (2026-11-04)
 
-M0 tamam, commit `789bdb6`:
+M0 tamam; 2026-11-04 düzeltmeleriyle (validate hata eşlemesi, sahiplik kontrolü,
+sunucu tarafı kapı, tek transaction) durum:
 
 ```
-31 test geçiyor · ruff temiz
+35 test geçiyor · ruff temiz
 canlı uvicorn üzerinde uçtan uca doğrulandı:
   register → version(draft) → validate → promote(active) → resolve(imzalı)
   imza doğrulandı; bozulmuş yük reddedildi

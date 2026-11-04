@@ -6,6 +6,8 @@ from typing import Any
 
 from . import signing, store
 from .config import get_settings
+from .db import transaction
+from .gate import gate_passed, load_catalogs, run_gate
 from .manifest import AgentManifest
 from .states import TransitionError, check_transition
 
@@ -32,25 +34,26 @@ def register_agent(
     data_classification: str = "internal",
     source_ip: str | None = None,
 ) -> dict:
-    if store.get_agent(tenant, name):
-        raise RegistryError(f"{tenant}/{name} zaten kayıtlı", status=409, code="already_exists")
-    agent = store.insert_agent(
-        name=name,
-        tenant=tenant,
-        owner_team=owner_team,
-        purpose=purpose,
-        criticality=criticality,
-        data_classification=data_classification,
-    )
-    store.insert_audit(
-        actor=actor,
-        action="agent.register",
-        object_type="agent",
-        object_id=f"{tenant}/{name}",
-        after_hash=None,
-        detail={"owner_team": owner_team},
-        source_ip=source_ip,
-    )
+    with transaction():
+        if store.get_agent(tenant, name):
+            raise RegistryError(f"{tenant}/{name} zaten kayıtlı", status=409, code="already_exists")
+        agent = store.insert_agent(
+            name=name,
+            tenant=tenant,
+            owner_team=owner_team,
+            purpose=purpose,
+            criticality=criticality,
+            data_classification=data_classification,
+        )
+        store.insert_audit(
+            actor=actor,
+            action="agent.register",
+            object_type="agent",
+            object_id=f"{tenant}/{name}",
+            after_hash=None,
+            detail={"owner_team": owner_team},
+            source_ip=source_ip,
+        )
     return agent
 
 
@@ -63,56 +66,63 @@ def create_version(
     git_commit: str | None = None,
     source_ip: str | None = None,
 ) -> dict:
-    agent = store.get_agent(tenant, name)
-    if not agent:
-        raise RegistryError(f"{tenant}/{name} kayıtlı değil", status=404, code="agent_not_found")
-    if agent["retired_at"]:
-        raise RegistryError("emekli ajanın yeni sürümü açılamaz", status=409, code="agent_retired")
-    if manifest.agent != name or manifest.tenant != tenant:
-        raise RegistryError(
-            "manifest içindeki agent/tenant, istek yoluyla uyuşmuyor",
-            status=422,
-            code="manifest_mismatch",
-        )
-    if manifest.owner != agent["owner_team"]:
-        raise RegistryError(
-            f"manifest sahibi ({manifest.owner}), ajanın sahibiyle uyuşmuyor "
-            f"({agent['owner_team']})",
-            status=422,
-            code="owner_mismatch",
-        )
-    if store.get_version(agent["id"], manifest.version):
-        raise RegistryError(
-            f"{name}@{manifest.version} zaten kayıtlı", status=409, code="version_exists"
-        )
-    manifest_json = json.loads(manifest.canonical_json())
-    manifest_hash = manifest.sha256()
+    with transaction():
+        agent = store.get_agent(tenant, name)
+        if not agent:
+            raise RegistryError(
+                f"{tenant}/{name} kayıtlı değil", status=404, code="agent_not_found"
+            )
+        if agent["retired_at"]:
+            raise RegistryError(
+                "emekli ajanın yeni sürümü açılamaz", status=409, code="agent_retired"
+            )
+        if manifest.agent != name or manifest.tenant != tenant:
+            raise RegistryError(
+                "manifest içindeki agent/tenant, istek yoluyla uyuşmuyor",
+                status=422,
+                code="manifest_mismatch",
+            )
+        if manifest.owner != agent["owner_team"]:
+            raise RegistryError(
+                f"manifest sahibi ({manifest.owner}), ajanın sahibiyle uyuşmuyor "
+                f"({agent['owner_team']})",
+                status=422,
+                code="owner_mismatch",
+            )
+        if store.get_version(agent["id"], manifest.version):
+            raise RegistryError(
+                f"{name}@{manifest.version} zaten kayıtlı", status=409, code="version_exists"
+            )
+        manifest_json = json.loads(manifest.canonical_json())
+        manifest_hash = manifest.sha256()
 
-    version = store.insert_version(
-        agent_id=agent["id"],
-        semver=manifest.version,
-        manifest_json=manifest_json,
-        manifest_hash=manifest_hash,
-        git_commit=git_commit,
-        eval_suite=manifest.evals.suite,
-        created_by=actor,
-    )
-    deps: list[tuple[str, str]] = []
-    deps += [("tool", t) for t in manifest.tools]
-    deps += [
-        ("model", m)
-        for m in filter(None, [manifest.model_policy.primary, manifest.model_policy.escalate_to])
-    ]
-    store.insert_dependencies(version["id"], deps)
-    store.insert_audit(
-        actor=actor,
-        action="version.create",
-        object_type="version",
-        object_id=f"{tenant}/{name}@{manifest.version}",
-        after_hash=manifest_hash,
-        detail={"git_commit": git_commit},
-        source_ip=source_ip,
-    )
+        version = store.insert_version(
+            agent_id=agent["id"],
+            semver=manifest.version,
+            manifest_json=manifest_json,
+            manifest_hash=manifest_hash,
+            git_commit=git_commit,
+            eval_suite=manifest.evals.suite,
+            created_by=actor,
+        )
+        deps: list[tuple[str, str]] = []
+        deps += [("tool", t) for t in manifest.tools]
+        deps += [
+            ("model", m)
+            for m in filter(
+                None, [manifest.model_policy.primary, manifest.model_policy.escalate_to]
+            )
+        ]
+        store.insert_dependencies(version["id"], deps)
+        store.insert_audit(
+            actor=actor,
+            action="version.create",
+            object_type="version",
+            object_id=f"{tenant}/{name}@{manifest.version}",
+            after_hash=manifest_hash,
+            detail={"git_commit": git_commit},
+            source_ip=source_ip,
+        )
     return version
 
 
@@ -128,24 +138,25 @@ def validate_version(
     actor: str,
     source_ip: str | None = None,
 ) -> dict:
-    version = _require_version(tenant, name, semver)
-    manifest = AgentManifest.model_validate(version["manifest_json"])
-    _check_eval_gates(manifest, eval_result)
-    try:
-        check_transition(version["state"], "validated")
-    except TransitionError as exc:
-        raise RegistryError(str(exc), status=409, code="invalid_transition") from exc
-    store.set_eval_result(version["id"], eval_result, eval_result["suite"])
-    store.set_state(version["id"], "validated")
-    store.insert_audit(
-        actor=actor,
-        action="version.validate",
-        object_type="version",
-        object_id=f"{tenant}/{name}@{semver}",
-        after_hash=version["manifest_hash"],
-        detail={"success_rate": eval_result["success_rate"]},
-        source_ip=source_ip,
-    )
+    with transaction():
+        version = _require_version(tenant, name, semver)
+        manifest = AgentManifest.model_validate(version["manifest_json"])
+        _check_eval_gates(manifest, eval_result)
+        try:
+            check_transition(version["state"], "validated")
+        except TransitionError as exc:
+            raise RegistryError(str(exc), status=409, code="invalid_transition") from exc
+        store.set_eval_result(version["id"], eval_result, eval_result["suite"])
+        store.set_state(version["id"], "validated")
+        store.insert_audit(
+            actor=actor,
+            action="version.validate",
+            object_type="version",
+            object_id=f"{tenant}/{name}@{semver}",
+            after_hash=version["manifest_hash"],
+            detail={"success_rate": eval_result["success_rate"]},
+            source_ip=source_ip,
+        )
     return {"semver": semver, "state": "validated", "success_rate": eval_result["success_rate"]}
 
 
@@ -177,6 +188,21 @@ def _check_eval_gates(manifest: AgentManifest, eval_result: dict) -> None:
             )
 
 
+def _evaluate_gate(tenant: str, manifest: AgentManifest, version: dict) -> list:
+    """Terfi kararı için kapıyı sunucu tarafında yeniden koşar (istemciye güvenilmez)."""
+    catalogs = load_catalogs(get_settings().catalog_dir)
+    conflicts = store.active_scopes_by_team(tenant)
+    return run_gate(manifest, version.get("eval_result"), catalogs, conflicts)
+
+
+def _gate_payload(checks: list) -> dict:
+    return {
+        "source": "registry",
+        "passed": gate_passed(checks),
+        "checks": [{"name": c.name, "passed": c.passed, "detail": c.detail} for c in checks],
+    }
+
+
 # ------------------------------------------------------------------- yaşam döngüsü
 
 
@@ -187,50 +213,80 @@ def promote_version(
     semver: str,
     actor: str,
     env: str = "prod",
-    gate_results: dict | None = None,
     source_ip: str | None = None,
 ) -> dict:
-    version = _require_version(tenant, name, semver)
-    agent = store.get_agent(tenant, name)
-    if agent and agent["retired_at"]:
-        raise RegistryError("emekli ajan terfi ettirilemez", status=409, code="agent_retired")
-    if version["state"] not in ("validated", "candidate"):
-        raise RegistryError(
-            f"terfi için validated durumu gerekli (şu an: {version['state']})",
-            status=409,
-            code="not_validated",
-        )
-    check_transition(version["state"], "active")
+    rejection: list | None = None
+    with transaction():
+        version = _require_version(tenant, name, semver)
+        agent = store.get_agent(tenant, name)
+        if agent and agent["retired_at"]:
+            raise RegistryError("emekli ajan terfi ettirilemez", status=409, code="agent_retired")
+        if version["state"] not in ("validated", "candidate"):
+            raise RegistryError(
+                f"terfi için validated durumu gerekli (şu an: {version['state']})",
+                status=409,
+                code="not_validated",
+            )
+        check_transition(version["state"], "active")
 
-    previous = store.get_active_version(version["agent_id"])
-    if previous:
-        check_transition(previous["state"], "deprecated")
-        store.set_state(previous["id"], "deprecated")
+        manifest = AgentManifest.model_validate(version["manifest_json"])
+        checks = _evaluate_gate(tenant, manifest, version)
+        previous = store.get_active_version(version["agent_id"])
 
-    store.set_state(version["id"], "active")
-    record = store.insert_promotion(
-        from_version=previous["id"] if previous else None,
-        to_version=version["id"],
-        gate_results=gate_results or {"source": "ci"},
-        approver=actor,
-        decision="approved",
-    )
-    deployment = store.insert_deployment(
-        version_id=version["id"],
-        env=env,
-        deployed_by=actor,
-        config_hash=version["manifest_hash"],
-    )
-    store.insert_audit(
-        actor=actor,
-        action="version.promote",
-        object_type="version",
-        object_id=f"{tenant}/{name}@{semver}",
-        before_hash=previous["manifest_hash"] if previous else None,
-        after_hash=version["manifest_hash"],
-        detail={"env": env, "replaced": previous["semver"] if previous else None},
-        source_ip=source_ip,
-    )
+        if not gate_passed(checks):
+            # kapı geçmedi: reddi kaydet, sürüm durumunu değiştirme
+            store.insert_promotion(
+                from_version=previous["id"] if previous else None,
+                to_version=version["id"],
+                gate_results=_gate_payload(checks),
+                approver=actor,
+                decision="rejected",
+            )
+            store.insert_audit(
+                actor=actor,
+                action="version.promote_rejected",
+                object_type="version",
+                object_id=f"{tenant}/{name}@{semver}",
+                before_hash=previous["manifest_hash"] if previous else None,
+                after_hash=version["manifest_hash"],
+                detail={"failed": [c.name for c in checks if not c.passed]},
+                source_ip=source_ip,
+            )
+            rejection = checks
+        else:
+            if previous:
+                check_transition(previous["state"], "deprecated")
+                store.set_state(previous["id"], "deprecated")
+
+            store.set_state(version["id"], "active")
+            record = store.insert_promotion(
+                from_version=previous["id"] if previous else None,
+                to_version=version["id"],
+                gate_results=_gate_payload(checks),
+                approver=actor,
+                decision="approved",
+            )
+            deployment = store.insert_deployment(
+                version_id=version["id"],
+                env=env,
+                deployed_by=actor,
+                config_hash=version["manifest_hash"],
+            )
+            store.insert_audit(
+                actor=actor,
+                action="version.promote",
+                object_type="version",
+                object_id=f"{tenant}/{name}@{semver}",
+                before_hash=previous["manifest_hash"] if previous else None,
+                after_hash=version["manifest_hash"],
+                detail={"env": env, "replaced": previous["semver"] if previous else None},
+                source_ip=source_ip,
+            )
+
+    if rejection is not None:
+        failures = "; ".join(f"{c.name}: {c.detail}" for c in rejection if not c.passed)
+        raise RegistryError(f"kapı geçmedi — {failures}", status=409, code="gate_failed")
+
     return {
         "semver": semver,
         "state": "active",
@@ -244,21 +300,22 @@ def promote_version(
 def transition(
     *, tenant: str, name: str, semver: str, target: str, actor: str, source_ip: str | None = None
 ) -> dict:
-    version = _require_version(tenant, name, semver)
-    try:
-        check_transition(version["state"], target)
-    except TransitionError as exc:
-        raise RegistryError(str(exc), status=409, code="invalid_transition") from exc
-    store.set_state(version["id"], target)
-    store.insert_audit(
-        actor=actor,
-        action=f"version.{target}",
-        object_type="version",
-        object_id=f"{tenant}/{name}@{semver}",
-        after_hash=version["manifest_hash"],
-        detail={"from": version["state"], "to": target},
-        source_ip=source_ip,
-    )
+    with transaction():
+        version = _require_version(tenant, name, semver)
+        try:
+            check_transition(version["state"], target)
+        except TransitionError as exc:
+            raise RegistryError(str(exc), status=409, code="invalid_transition") from exc
+        store.set_state(version["id"], target)
+        store.insert_audit(
+            actor=actor,
+            action=f"version.{target}",
+            object_type="version",
+            object_id=f"{tenant}/{name}@{semver}",
+            after_hash=version["manifest_hash"],
+            detail={"from": version["state"], "to": target},
+            source_ip=source_ip,
+        )
     return {"semver": semver, "state": target, "previous_state": version["state"]}
 
 

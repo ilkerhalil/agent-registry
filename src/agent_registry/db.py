@@ -1,13 +1,18 @@
-"""Veritabanı bağlantısı ve şema kurulumu."""
+"""Veritabanı bağlantısı, transaction ve şema kurulumu."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from pathlib import Path
 
+from psycopg import Connection
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from .config import get_settings
 
 _pool: ConnectionPool | None = None
+_active_conn: ContextVar[Connection | None] = ContextVar("active_conn", default=None)
 
 
 def pool() -> ConnectionPool:
@@ -21,6 +26,33 @@ def pool() -> ConnectionPool:
             open=True,
         )
     return _pool
+
+
+@contextmanager
+def transaction() -> Iterator[Connection]:
+    """Birden çok store çağrısını tek transaction'da birleştirir.
+
+    Blok normal biterse commit, istisnada rollback (psycopg_pool davranışı).
+    İç içe çağrılar dıştaki transaction'a katılır.
+    """
+    active = _active_conn.get()
+    if active is not None:
+        yield active
+        return
+    with pool().connection() as conn:
+        token = _active_conn.set(conn)
+        try:
+            yield conn
+        finally:
+            _active_conn.reset(token)
+
+
+def connection():
+    """Aktif transaction varsa onu, yoksa havuzdan yeni bağlantı verir."""
+    active = _active_conn.get()
+    if active is not None:
+        return nullcontext(active)
+    return pool().connection()
 
 
 def close_pool() -> None:

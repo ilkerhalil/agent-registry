@@ -38,7 +38,6 @@ class EvalResultIn(BaseModel):
 
 class PromoteIn(BaseModel):
     env: str = "prod"
-    gate_results: dict = Field(default_factory=dict)
 
 
 def _actor(x_actor: str | None = Header(default=None)) -> str:
@@ -125,7 +124,6 @@ def promote_version(
         semver=semver,
         actor=actor,
         env=body.env,
-        gate_results=body.gate_results,
     )
 
 

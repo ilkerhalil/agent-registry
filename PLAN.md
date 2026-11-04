@@ -86,7 +86,7 @@ draft ──validate──► validated ──promote──► active ──depr
 POST /v1/agents                              ajan kaydı
 POST /v1/agents/{name}/versions              yeni sürüm (immutable)
 POST /v1/agents/{name}/versions/{v}:validate eval sonucunu kaydet + doğrula
-POST /v1/agents/{name}/versions/{v}:promote  kapı sonucuyla terfi
+POST /v1/agents/{name}/versions/{v}:promote  sunucuda kapıyı yeniden koşarak terfi
 POST /v1/agents/{name}/versions/{v}:deprecate
 POST /v1/agents/{name}/versions/{v}:retire
 GET  /v1/agents/{name}/resolve?env=prod      runtime çözümleme (imzalı)
@@ -116,6 +116,10 @@ GET  /healthz
 
 Kontroller lokalde katalog dosyaları (tools.yaml, models.yaml, teams.yaml) üzerinden koşar;
 v0.2'de bunlar da registry'ye taşınır.
+
+Aynı yedi kontrol `promote` sırasında **registry tarafından yeniden koşulur**; istemcinin
+gönderdiği bir kapı sonucuna güvenilmez. Kapı geçmezse sürüm `validated` kalır, `promotion`
+tablosuna `rejected` kaydı ve `audit_event`'e `version.promote_rejected` yazılır.
 
 ## Güvenlik kararları
 
