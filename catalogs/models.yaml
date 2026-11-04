@@ -1,0 +1,8 @@
+# Model kataloğu — model geçidinde tanımlı olması gereken modeller.
+models:
+  - name: small-classifier
+    provider: internal
+    note: System One sınıflandırıcı
+  - name: large-reasoner
+    provider: cloud
+    note: Belirsizlik yükseldiğinde devreye girer

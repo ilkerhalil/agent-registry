@@ -1,0 +1,12 @@
+teams:
+  hasar-operasyon:
+    on_call: hasar-nobet
+    allowed_scopes:
+      - claims:read
+      - branches:read
+      - branches:write
+  platform:
+    on_call: platform-nobet
+    allowed_scopes:
+      - tickets:read
+      - tickets:write

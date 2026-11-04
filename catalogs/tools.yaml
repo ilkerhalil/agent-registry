@@ -1,0 +1,14 @@
+# Araç kataloğu — CI kapısı manifestin kullandığı araçları burada arar.
+tools:
+  - name: policy_lookup
+    owner: platform
+    description: Poliçe/mevzuat araması (salt okunur)
+  - name: claim_read
+    owner: hasar-operasyon
+    description: Hasar dosyası okuma
+  - name: branch_assign
+    owner: hasar-operasyon
+    description: Branş atama (yazma)
+  - name: ticket_create
+    owner: platform
+    description: ITSM kaydı açma
