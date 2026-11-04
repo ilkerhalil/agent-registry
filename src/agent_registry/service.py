@@ -74,6 +74,13 @@ def create_version(
             status=422,
             code="manifest_mismatch",
         )
+    if manifest.owner != agent["owner_team"]:
+        raise RegistryError(
+            f"manifest sahibi ({manifest.owner}), ajanın sahibiyle uyuşmuyor "
+            f"({agent['owner_team']})",
+            status=422,
+            code="owner_mismatch",
+        )
     if store.get_version(agent["id"], manifest.version):
         raise RegistryError(
             f"{name}@{manifest.version} zaten kayıtlı", status=409, code="version_exists"
@@ -124,7 +131,10 @@ def validate_version(
     version = _require_version(tenant, name, semver)
     manifest = AgentManifest.model_validate(version["manifest_json"])
     _check_eval_gates(manifest, eval_result)
-    check_transition(version["state"], "validated")
+    try:
+        check_transition(version["state"], "validated")
+    except TransitionError as exc:
+        raise RegistryError(str(exc), status=409, code="invalid_transition") from exc
     store.set_eval_result(version["id"], eval_result, eval_result["suite"])
     store.set_state(version["id"], "validated")
     store.insert_audit(

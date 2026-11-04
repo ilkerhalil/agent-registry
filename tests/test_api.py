@@ -106,6 +106,22 @@ def test_duplicate_version_rejected(client):
     assert r.status_code >= 400
 
 
+def test_revalidating_version_returns_conflict(client):
+    _register(client)
+    _create_version(client)
+    assert client.post(f"{BASE}/versions/2.3.1:validate", json=EVAL).status_code == 200
+    r = client.post(f"{BASE}/versions/2.3.1:validate", json=EVAL)
+    assert r.status_code == 409
+    assert r.json()["error"] == "invalid_transition"
+
+
+def test_manifest_owner_must_match_registered_team(client):
+    _register(client)
+    r = client.post(f"{BASE}/versions", json={"manifest": dict(MANIFEST, owner="platform")})
+    assert r.status_code == 422
+    assert r.json()["error"] == "owner_mismatch"
+
+
 def test_block_requires_security_role(client):
     _register(client)
     _create_version(client)
