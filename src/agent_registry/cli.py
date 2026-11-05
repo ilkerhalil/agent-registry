@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from . import store
+from .config import get_settings
 from .db import close_pool, init_schema
 from .gate import gate_passed, load_catalogs, run_gate
 
@@ -28,6 +29,13 @@ def cmd_init_db(_args) -> int:
 
 
 def cmd_serve(args) -> int:
+    if not get_settings().api_keys:
+        print(
+            "hata: REGISTRY_API_KEYS tanımlı değil; sunucu kimlik doğrulamasız başlatılamaz",
+            file=sys.stderr,
+        )
+        return 2
+
     import uvicorn
 
     uvicorn.run("agent_registry.api:app", host=args.host, port=args.port, reload=args.reload)

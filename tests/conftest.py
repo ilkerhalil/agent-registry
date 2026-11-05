@@ -1,8 +1,26 @@
+import json
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
 from agent_registry.api import app
+from agent_registry.config import get_settings
 from agent_registry.db import close_pool, init_schema, pool
+
+API_KEYS = {
+    "pub-denizbank": {"actor": "ci-bot", "roles": ["publisher"], "tenants": ["denizbank"]},
+    "runtime-denizbank": {
+        "actor": "runtime-denizbank",
+        "roles": ["runtime"],
+        "tenants": ["denizbank"],
+    },
+    "sec-global": {"actor": "security-bot", "roles": ["security"], "tenants": ["*"]},
+}
+
+PUBLISHER = {"Authorization": "Bearer pub-denizbank"}
+RUNTIME = {"Authorization": "Bearer runtime-denizbank"}
+SECURITY = {"Authorization": "Bearer sec-global"}
 
 MANIFEST = {
     "agent": "claim-triage",
@@ -39,7 +57,16 @@ EVAL = {
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _schema():
+def _auth_env():
+    os.environ["REGISTRY_API_KEYS"] = json.dumps(API_KEYS)
+    get_settings.cache_clear()
+    yield
+    os.environ.pop("REGISTRY_API_KEYS", None)
+    get_settings.cache_clear()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _schema(_auth_env):
     init_schema()
     yield
     close_pool()
@@ -58,4 +85,24 @@ def _clean():
 
 @pytest.fixture
 def client():
+    return TestClient(app, headers=PUBLISHER)
+
+
+@pytest.fixture
+def anon_client():
     return TestClient(app)
+
+
+@pytest.fixture
+def invalid_client():
+    return TestClient(app, headers={"Authorization": "Bearer gecersiz-anahtar"})
+
+
+@pytest.fixture
+def runtime_client():
+    return TestClient(app, headers=RUNTIME)
+
+
+@pytest.fixture
+def security_client():
+    return TestClient(app, headers=SECURITY)

@@ -122,7 +122,7 @@ def test_manifest_owner_must_match_registered_team(client):
     assert r.json()["error"] == "owner_mismatch"
 
 
-def test_promote_runs_gate_server_side(client):
+def test_promote_runs_gate_server_side(client, security_client):
     _register(client)
     client.post(f"{BASE}/versions", json={"manifest": dict(MANIFEST, tools=["ghost_tool"])})
     assert client.post(f"{BASE}/versions/2.3.1:validate", json=EVAL).status_code == 200
@@ -133,7 +133,7 @@ def test_promote_runs_gate_server_side(client):
 
     # sürüm aktif olmadı ve reddedilen terfi denetim izine yazıldı
     assert client.get(f"{BASE}/resolve").status_code == 404
-    events = client.get("/v1/audit", params={"object_type": "version"}).json()["events"]
+    events = security_client.get("/v1/audit", params={"object_type": "version"}).json()["events"]
     assert any(e["action"] == "version.promote_rejected" for e in events)
 
 
@@ -157,19 +157,70 @@ def test_promote_rolls_back_on_failure(client, monkeypatch):
     assert client.get(f"{BASE}/resolve").json()["version"] == "2.3.1"
 
 
-def test_block_requires_security_role(client):
+def test_block_requires_security_role(client, security_client):
     _register(client)
     _create_version(client)
     r = client.post(f"{BASE}/versions/2.3.1:block")
     assert r.status_code == 403
-    r = client.post(f"{BASE}/versions/2.3.1:block", headers={"X-Role": "security"})
+    r = security_client.post(f"{BASE}/versions/2.3.1:block")
     assert r.status_code == 200
     assert r.json()["state"] == "blocked"
 
 
-def test_audit_trail_written(client):
+def test_missing_token_rejected(anon_client):
+    r = anon_client.get(f"{BASE}/resolve")
+    assert r.status_code == 401
+    assert r.json()["error"] == "unauthorized"
+    assert r.headers["www-authenticate"] == "Bearer"
+
+
+def test_invalid_token_rejected(invalid_client):
+    r = invalid_client.get(f"{BASE}/resolve")
+    assert r.status_code == 401
+    assert r.json()["error"] == "unauthorized"
+
+
+def test_publisher_cannot_reach_other_tenant(client):
+    r = client.post(
+        "/v1/agents",
+        json={
+            "name": "other-agent",
+            "tenant": "intertech",
+            "owner_team": "platform",
+            "purpose": "Baska kiracida kayitli bir ajan",
+        },
+    )
+    assert r.status_code == 403
+    assert r.json()["error"] == "forbidden_tenant"
+    assert client.get("/v1/agents/intertech/other-agent/resolve").status_code == 403
+
+
+def test_list_agents_is_tenant_scoped(client):
     _register(client)
-    r = client.get("/v1/audit", params={"object_type": "agent"})
+    r = client.get("/v1/agents")
+    assert r.status_code == 200
+    assert all(a["tenant"] == "denizbank" for a in r.json()["agents"])
+    assert client.get("/v1/agents", params={"tenant": "intertech"}).status_code == 403
+
+
+def test_runtime_can_resolve_but_not_promote(client, runtime_client):
+    _register(client)
+    _create_version(client)
+    client.post(f"{BASE}/versions/2.3.1:validate", json=EVAL)
+    assert client.post(f"{BASE}/versions/2.3.1:promote", json={}).status_code == 200
+
+    assert runtime_client.get(f"{BASE}/resolve").status_code == 200
+    assert runtime_client.post(f"{BASE}/versions/2.3.1:promote", json={}).status_code == 403
+
+
+def test_audit_requires_security_role(client, security_client):
+    assert client.get("/v1/audit").status_code == 403
+    assert security_client.get("/v1/audit").status_code == 200
+
+
+def test_audit_trail_written(client, security_client):
+    _register(client)
+    r = security_client.get("/v1/audit", params={"object_type": "agent"})
     events = r.json()["events"]
     assert any(e["action"] == "agent.register" for e in events)
 
