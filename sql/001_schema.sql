@@ -45,6 +45,7 @@ CREATE INDEX IF NOT EXISTS agent_version_state_idx ON agent_version (state);
 CREATE TABLE IF NOT EXISTS deployment (
     id           BIGSERIAL PRIMARY KEY,
     version_id   BIGINT      NOT NULL REFERENCES agent_version(id) ON DELETE RESTRICT,
+    agent_id     BIGINT      REFERENCES agent(id) ON DELETE RESTRICT,
     env          TEXT        NOT NULL,
     region       TEXT        NOT NULL DEFAULT 'default',
     config_hash  TEXT,
@@ -54,7 +55,31 @@ CREATE TABLE IF NOT EXISTS deployment (
     CONSTRAINT deployment_status_chk CHECK (status IN ('active','stopped','failed'))
 );
 
+-- Mevcut kurulumlar için agent_id ekle ve geriye dönük doldur
+ALTER TABLE deployment ADD COLUMN IF NOT EXISTS agent_id BIGINT REFERENCES agent(id) ON DELETE RESTRICT;
+UPDATE deployment d
+   SET agent_id = v.agent_id
+  FROM agent_version v
+ WHERE d.version_id = v.id AND d.agent_id IS NULL;
+
 CREATE INDEX IF NOT EXISTS deployment_version_idx ON deployment (version_id);
+
+-- Geçmiş kayıtlarda ortam başına birden çok "active" varsa en yenisi kalır
+UPDATE deployment d
+   SET status = 'stopped'
+ WHERE d.status = 'active'
+   AND EXISTS (
+       SELECT 1
+         FROM deployment d2
+        WHERE d2.agent_id = d.agent_id
+          AND d2.env = d.env
+          AND d2.status = 'active'
+          AND (d2.deployed_at, d2.id) > (d.deployed_at, d.id)
+   );
+
+-- Ajan + ortam başına tek aktif deployment
+CREATE UNIQUE INDEX IF NOT EXISTS deployment_one_active
+    ON deployment (agent_id, env) WHERE status = 'active';
 
 CREATE TABLE IF NOT EXISTS promotion (
     id                BIGSERIAL PRIMARY KEY,
@@ -111,8 +136,11 @@ BEGIN
     IF NEW.manifest_json <> OLD.manifest_json OR NEW.manifest_hash <> OLD.manifest_hash THEN
         RAISE EXCEPTION 'agent_version manifest değiştirilemez (yeni sürüm açın)';
     END IF;
-    IF OLD.state IN ('deprecated','retired') AND NEW.state <> OLD.state THEN
-        RAISE EXCEPTION '% durumundan geri dönüş yok', OLD.state;
+    IF OLD.state = 'retired' AND NEW.state <> OLD.state THEN
+        RAISE EXCEPTION 'retired durumundan geri dönüş yok';
+    END IF;
+    IF OLD.state = 'deprecated' AND NEW.state NOT IN ('deprecated','retired') THEN
+        RAISE EXCEPTION 'deprecated yalnız retired''a ilerleyebilir';
     END IF;
     NEW.state_changed_at := now();
     RETURN NEW;

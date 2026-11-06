@@ -129,16 +129,57 @@ def insert_promotion(
 
 
 def insert_deployment(
-    *, version_id: int, env: str, deployed_by: str, config_hash: str | None
+    *,
+    version_id: int,
+    agent_id: int,
+    env: str,
+    deployed_by: str,
+    config_hash: str | None,
 ) -> dict:
     with connection() as conn, conn.cursor() as cur:
         cur.execute(
-            """INSERT INTO deployment (version_id, env, config_hash, deployed_by)
-               VALUES (%s, %s, %s, %s) RETURNING id, env, deployed_at""",
-            (version_id, env, config_hash, deployed_by),
+            """INSERT INTO deployment (version_id, agent_id, env, config_hash, deployed_by)
+               VALUES (%s, %s, %s, %s, %s)
+               RETURNING id, env, deployed_at""",
+            (version_id, agent_id, env, config_hash, deployed_by),
         )
         row = cur.fetchone()
         return row
+
+
+def get_active_deployment(agent_id: int, env: str) -> dict | None:
+    """Bir ajanın belirli ortamdaki aktif sürümünü döndürür."""
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """SELECT v.*
+                 FROM deployment d
+                 JOIN agent_version v ON v.id = d.version_id
+                WHERE d.agent_id = %s AND d.env = %s AND d.status = 'active'
+                  AND v.state NOT IN ('retired', 'blocked')
+                ORDER BY d.deployed_at DESC
+                LIMIT 1""",
+            (agent_id, env),
+        )
+        return _one(cur)
+
+
+def stop_env_deployments(agent_id: int, env: str) -> None:
+    """Aynı ortamdaki önceki aktif deployment'ı kapatır."""
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """UPDATE deployment SET status = 'stopped'
+                WHERE agent_id = %s AND env = %s AND status = 'active'""",
+            (agent_id, env),
+        )
+
+
+def stop_deployments(version_id: int) -> None:
+    """Bir sürümün tüm ortamlardaki deployment'larını kapatır."""
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE deployment SET status = 'stopped' WHERE version_id = %s AND status = 'active'",
+            (version_id,),
+        )
 
 
 def insert_dependencies(version_id: int, deps: list[tuple[str, str]]) -> None:

@@ -4,7 +4,7 @@ import pytest
 from agent_registry.config import get_settings
 from agent_registry.db import pool
 from agent_registry.service import build_signed_payload
-from agent_registry.signing import verify
+from agent_registry.signing import SignatureError, verify
 
 from .conftest import EVAL, MANIFEST
 
@@ -31,10 +31,10 @@ def test_full_lifecycle_and_signed_resolve(client):
     assert _register(client).status_code == 201
     assert _create_version(client).status_code == 201
 
-    # aktif sürüm yokken resolve 404
+    # aktif deployment yokken resolve 404
     r = client.get(f"{BASE}/resolve")
     assert r.status_code == 404
-    assert r.json()["error"] == "no_active_version"
+    assert r.json()["error"] == "no_active_deployment"
 
     # eval eşiğini geçen doğrulama
     r = client.post(f"{BASE}/versions/2.3.1:validate", json=EVAL)
@@ -56,10 +56,30 @@ def test_full_lifecycle_and_signed_resolve(client):
         agent=body["agent"],
         tenant=body["tenant"],
         version=body["version"],
+        env=body["env"],
         manifest_hash=body["manifest_hash"],
         expires_at=body["expires_at"],
     )
     verify(payload, body["signature"], get_settings().registry_signing_key)
+
+
+def test_signature_binds_env(client):
+    _register(client)
+    _create_version(client)
+    client.post(f"{BASE}/versions/2.3.1:validate", json=EVAL)
+    client.post(f"{BASE}/versions/2.3.1:promote", json={"env": "prod"})
+    body = client.get(f"{BASE}/resolve").json()
+
+    tampered = build_signed_payload(
+        agent=body["agent"],
+        tenant=body["tenant"],
+        version=body["version"],
+        env="staging",
+        manifest_hash=body["manifest_hash"],
+        expires_at=body["expires_at"],
+    )
+    with pytest.raises(SignatureError):
+        verify(tampered, body["signature"], get_settings().registry_signing_key)
 
 
 def test_promote_requires_validation(client):
@@ -113,6 +133,57 @@ def test_revalidating_version_returns_conflict(client):
     r = client.post(f"{BASE}/versions/2.3.1:validate", json=EVAL)
     assert r.status_code == 409
     assert r.json()["error"] == "invalid_transition"
+
+
+def test_promote_to_staging_keeps_prod_version(client):
+    _register(client)
+    _create_version(client, "2.3.1")
+    client.post(f"{BASE}/versions/2.3.1:validate", json=EVAL)
+    client.post(f"{BASE}/versions/2.3.1:promote", json={"env": "prod"})
+
+    _create_version(client, "2.4.0")
+    client.post(f"{BASE}/versions/2.4.0:validate", json=EVAL)
+    r = client.post(f"{BASE}/versions/2.4.0:promote", json={"env": "staging"})
+    assert r.status_code == 200
+    assert r.json()["state"] == "candidate"
+
+    assert client.get(f"{BASE}/resolve", params={"env": "prod"}).json()["version"] == "2.3.1"
+    assert client.get(f"{BASE}/resolve", params={"env": "staging"}).json()["version"] == "2.4.0"
+
+
+def test_resolve_unknown_env_returns_404(client):
+    _register(client)
+    _create_version(client)
+    client.post(f"{BASE}/versions/2.3.1:validate", json=EVAL)
+    client.post(f"{BASE}/versions/2.3.1:promote", json={"env": "prod"})
+
+    r = client.get(f"{BASE}/resolve", params={"env": "staging"})
+    assert r.status_code == 404
+    assert r.json()["error"] == "no_active_deployment"
+
+
+def test_staging_promote_replaces_previous_staging(client):
+    _register(client)
+    _create_version(client, "2.3.1")
+    client.post(f"{BASE}/versions/2.3.1:validate", json=EVAL)
+    client.post(f"{BASE}/versions/2.3.1:promote", json={"env": "staging"})
+
+    _create_version(client, "2.4.0")
+    client.post(f"{BASE}/versions/2.4.0:validate", json=EVAL)
+    r = client.post(f"{BASE}/versions/2.4.0:promote", json={"env": "staging"})
+    assert r.json()["replaced"] == "2.3.1"
+    assert client.get(f"{BASE}/resolve", params={"env": "staging"}).json()["version"] == "2.4.0"
+
+
+def test_retire_stops_deployments(client):
+    _register(client)
+    _create_version(client)
+    client.post(f"{BASE}/versions/2.3.1:validate", json=EVAL)
+    client.post(f"{BASE}/versions/2.3.1:promote", json={"env": "prod"})
+
+    assert client.post(f"{BASE}/versions/2.3.1:deprecate").status_code == 200
+    assert client.post(f"{BASE}/versions/2.3.1:retire").status_code == 200
+    assert client.get(f"{BASE}/resolve").status_code == 404
 
 
 def test_manifest_owner_must_match_registered_team(client):

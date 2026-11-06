@@ -24,18 +24,27 @@ Tasarım gerekçeleri `PLAN.md`'de. Kod yazmadan önce orayı oku.
 
 1. **Manifest satırı değişmez.** Yeni sürüm = yeni satır. DB trigger'ı (`agent_version_immutable`)
    bunu zorlar; trigger'ı zayıflatma.
-2. **Ajan başına tek aktif sürüm.** `agent_version_one_active` kısmi unique index'i korur;
-   uygulama katmanında da kontrol edilir.
-3. **`resolve` imzasız dönmez.** İmza `build_signed_payload()` gövdesi üzerinedir; runtime aynı
-   biçimi doğrular. İmzayı opsiyonel yapma.
+2. **Ajan başına tek aktif sürüm (prod).** `agent_version_one_active` kısmi unique index'i korur;
+   uygulama katmanında da kontrol edilir. Ortam bazlı çözümleme `deployment` tablosundan yapılır:
+   ajan + ortam başına tek aktif deployment (`deployment_one_active`).
+3. **`resolve` imzasız dönmez.** İmza `build_signed_payload()` gövdesi (`agent`, `tenant`,
+   `version`, `env`, `manifest_hash`, `expires_at`) üzerinedir; runtime aynı biçimi doğrular.
+   İmzayı opsiyonel yapma.
 4. **`audit_event` append-only.** UPDATE/DELETE trigger ile reddedilir.
 5. **Kapı fail-closed ve sunucu tarafında.** `run_gate()` içinde bir kontrol çalıştırılamıyorsa
    `passed=False`. "Bilmiyorum" asla "geçti" sayılmaz. `promote` kapıyı registry'de yeniden
    koşar; istemcinin gönderdiği `gate_results`'a güvenilmez.
-6. **Tenant izolasyonu servis katmanında.** `resolve` yalnız kendi kiracısını çözer.
-   (Not: v0.1'de kimlik doğrulama katmanı yok — bu invariant henüz hedeftir.)
+6. **Tenant izolasyonu zorunlu.** Her `/v1` ucu Bearer API anahtarı ister; token'ın rolleri ve
+   kiracı kümesi denetlenir (`auth.require_role` / `auth.require_tenant`). `X-Actor`/`X-Role`
+   başlıklarına güvenilmez. Anahtar yoksa sunucu başlamaz.
 7. **Registry elle düzenlenmez.** Doğruluk kaynağı Git'teki manifestlerdir; registry onların
    indeksidir. "Kolaylık olsun" diye yazma ucu ekleme.
+8. **Yeni uç = rol + tenant kontrolü.** `/healthz` dışında auth'suz uç eklenmez; rol seçimi
+   `runtime` (okuma/resolve), `publisher` (yazma), `security` (block/audit) ile sınırlıdır.
+9. **Prod dışı terfi prod'u değiştirmez.** `promote --env <prod-dışı>` sürümü `candidate` yapar,
+   aktif (prod) sürümü deprecate etmez; resolve ortamın deployment'ını döndürür. Durum
+   `deprecated`/`retired`/`blocked` olunca tüm deployment'lar kapatılır (DB trigger'ı
+   deprecated→retired dışındaki geri dönüşleri reddeder).
 
 ## Mimari harita
 
@@ -46,6 +55,7 @@ src/agent_registry/
   states.py      yaşam döngüsü geçiş kuralları (tek kaynak)
   store.py       SQL erişimi — iş kuralı YOK
   service.py     iş kuralları: kayıt, doğrulama, terfi, çözümleme
+  auth.py        Bearer API anahtarı · roller · tenant kapsamı
   api.py         FastAPI uç noktaları (ince katman)
   gate.py        CI kapısı: 7 kontrol, DB'den bağımsız ve test edilebilir
   cli.py         serve · init-db · gate · agents
@@ -63,8 +73,9 @@ Katman kuralı: **api → service → store**. API'de iş kuralı, store'da kara
 docker compose up -d db                      # Postgres 16, port 5433 (5432 başka projede)
 uv sync --extra dev
 uv run agent-registry init-db                # şemayı uygular (idempotent)
+cp .env.example .env                         # REGISTRY_API_KEYS dahil
 uv run agent-registry serve --port 8100      # http://127.0.0.1:8100/docs
-uv run pytest                                # 31 test
+uv run pytest                                # 46 test
 uv run ruff format . && uv run ruff check .
 uv run agent-registry gate \
   --manifest examples/claim-triage.manifest.yaml \
@@ -73,13 +84,13 @@ uv run agent-registry gate \
 
 DB olmadan testler koşmaz — `conftest.py` şemayı uygular ve tabloları truncate eder.
 
-## Durum (2026-11-04)
+## Durum (2026-11-05)
 
-M0 tamam; 2026-11-04 düzeltmeleriyle (validate hata eşlemesi, sahiplik kontrolü,
-sunucu tarafı kapı, tek transaction) durum:
+M0 tamam; son düzeltmelerle (validate hata eşlemesi, sahiplik kontrolü,
+sunucu tarafı kapı, tek transaction, Bearer API anahtarı + rol/tenant denetimi) durum:
 
 ```
-35 test geçiyor · ruff temiz
+46 test geçiyor · ruff temiz
 canlı uvicorn üzerinde uçtan uca doğrulandı:
   register → version(draft) → validate → promote(active) → resolve(imzalı)
   imza doğrulandı; bozulmuş yük reddedildi

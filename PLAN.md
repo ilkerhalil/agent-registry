@@ -57,7 +57,7 @@ agent           name, tenant, owner_team, purpose, criticality,
                 data_classification, created_at, retired_at
 agent_version   agent_id, semver, manifest_json, manifest_hash, git_commit,
                 state, eval_result, signed_by, created_by           (IMMUTABLE)
-deployment      version_id, env, region, config_hash, deployed_by, status
+deployment      version_id, agent_id, env, region, config_hash, deployed_by, status
 promotion       from_version, to_version, gate_results_json, approver, decision
 dependency      version_id, kind(agent|tool|dataset|model), ref, required
 audit_event     actor, action, object_type, object_id, before/after_hash, ts
@@ -65,7 +65,8 @@ audit_event     actor, action, object_type, object_id, before/after_hash, ts
 
 Kısıtlar:
 - `UNIQUE(agent_id, semver)`
-- `UNIQUE INDEX ... WHERE state='active'` → ajan başına tek aktif sürüm
+- `UNIQUE INDEX ... WHERE state='active'` → ajan başına tek aktif sürüm (prod)
+- `UNIQUE INDEX ... (agent_id, env) WHERE status='active'` → ajan + ortam başına tek aktif deployment
 - `audit_event` üzerinde UPDATE/DELETE trigger ile reddedilir
 
 ## Yaşam döngüsü
@@ -76,7 +77,10 @@ draft ──validate──► validated ──promote──► active ──depr
                         └──────────── blocked (güvenlik) ────────────┘
 ```
 
-- `active` olmayan sürüm `resolve` ile dönmez
+- `resolve` sürümü `deployment` tablosundan **ortam bazında** çözer; aktif deployment yoksa 404
+- `promote --env prod` aktif sürümü değiştirir; prod dışı terfi sürümü `candidate` yapar ve
+  prod'daki aktif sürümü etkilemez
+- `deprecated` / `retired` / `blocked` sürümlerin tüm deployment'ları kapatılır
 - `retired` geri dönmez; geri dönüş = yeni sürüm
 - `blocked` yalnız güvenlik rolü tarafından konur/kaldırılır
 
@@ -95,10 +99,13 @@ GET  /v1/audit?object=...                    denetim izi
 GET  /healthz
 ```
 
+`/healthz` dışındaki tüm uçlar `Authorization: Bearer <anahtar>` ister; yetki rol ve
+kiracı kapsamıyla denetlenir (bkz. Güvenlik kararları).
+
 `resolve` yanıtı imza taşır:
 
 ```json
-{"agent":"claim-triage","version":"2.3.1","manifest":{...},
+{"agent":"claim-triage","version":"2.3.1","env":"prod","manifest":{...},
  "manifest_hash":"sha256:...","signature":"hmac-sha256:...","expires_at":"..."}
 ```
 
@@ -123,6 +130,12 @@ tablosuna `rejected` kaydı ve `audit_event`'e `version.promote_rejected` yazıl
 
 ## Güvenlik kararları
 
+- **API kimlik doğrulaması zorunlu.** Bearer API anahtarları `REGISTRY_API_KEYS` ortam
+  değişkeninden (JSON) okunur. Roller: `runtime` (resolve), `publisher` (yazma uçları),
+  `security` (block + audit). Her anahtar bir kiracı kümesine bağlıdır; `*` tüm kiracılar.
+  Anahtar tanımlı değilse sunucu başlamaz. `X-Actor` / `X-Role` başlıkları kaldırıldı;
+  aktör ve rol yalnız token'dan gelir. v0.2'de OIDC/mTLS backend'i aynı `Principal`
+  arayüzünü üretir.
 - **İmza zorunlu.** `resolve` imzasız/geçersiz manifest döndürmez.
 - **İmza anahtarı ortamdan** (`REGISTRY_SIGNING_KEY`); kodda asla.
 - **Registry çökerse** runtime son imzalı kopyayla çalışır (TTL'li) — imzasız asla.

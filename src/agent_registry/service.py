@@ -221,22 +221,30 @@ def promote_version(
         agent = store.get_agent(tenant, name)
         if agent and agent["retired_at"]:
             raise RegistryError("emekli ajan terfi ettirilemez", status=409, code="agent_retired")
-        if version["state"] not in ("validated", "candidate"):
+        if version["state"] not in ("validated", "candidate", "active"):
             raise RegistryError(
-                f"terfi için validated durumu gerekli (şu an: {version['state']})",
+                f"terfi için validated/candidate/active durumu gerekli (şu an: {version['state']})",
                 status=409,
                 code="not_validated",
             )
-        check_transition(version["state"], "active")
 
         manifest = AgentManifest.model_validate(version["manifest_json"])
         checks = _evaluate_gate(tenant, manifest, version)
-        previous = store.get_active_version(version["agent_id"])
+        previous_env = store.get_active_deployment(version["agent_id"], env)
+        previous_active = store.get_active_version(version["agent_id"]) if env == "prod" else None
+        from_version = previous_env["id"] if previous_env else None
+        if from_version is None and previous_active and previous_active["id"] != version["id"]:
+            from_version = previous_active["id"]
+        before_hash = (
+            previous_env["manifest_hash"]
+            if previous_env
+            else (previous_active["manifest_hash"] if previous_active else None)
+        )
 
         if not gate_passed(checks):
             # kapı geçmedi: reddi kaydet, sürüm durumunu değiştirme
             store.insert_promotion(
-                from_version=previous["id"] if previous else None,
+                from_version=from_version,
                 to_version=version["id"],
                 gate_results=_gate_payload(checks),
                 approver=actor,
@@ -247,39 +255,49 @@ def promote_version(
                 action="version.promote_rejected",
                 object_type="version",
                 object_id=f"{tenant}/{name}@{semver}",
-                before_hash=previous["manifest_hash"] if previous else None,
+                before_hash=before_hash,
                 after_hash=version["manifest_hash"],
-                detail={"failed": [c.name for c in checks if not c.passed]},
+                detail={"env": env, "failed": [c.name for c in checks if not c.passed]},
                 source_ip=source_ip,
             )
             rejection = checks
         else:
-            if previous:
-                check_transition(previous["state"], "deprecated")
-                store.set_state(previous["id"], "deprecated")
+            if env == "prod":
+                if version["state"] != "active":
+                    check_transition(version["state"], "active")
+                    if previous_active and previous_active["id"] != version["id"]:
+                        check_transition(previous_active["state"], "deprecated")
+                        store.set_state(previous_active["id"], "deprecated")
+                        store.stop_deployments(previous_active["id"])
+                    store.set_state(version["id"], "active")
+            elif version["state"] == "validated":
+                # prod dışı terfi: aktif sürüm değişmez, sürüm aday olur
+                check_transition(version["state"], "candidate")
+                store.set_state(version["id"], "candidate")
 
-            store.set_state(version["id"], "active")
+            store.stop_env_deployments(version["agent_id"], env)
+            deployment = store.insert_deployment(
+                version_id=version["id"],
+                agent_id=version["agent_id"],
+                env=env,
+                deployed_by=actor,
+                config_hash=version["manifest_hash"],
+            )
             record = store.insert_promotion(
-                from_version=previous["id"] if previous else None,
+                from_version=from_version,
                 to_version=version["id"],
                 gate_results=_gate_payload(checks),
                 approver=actor,
                 decision="approved",
-            )
-            deployment = store.insert_deployment(
-                version_id=version["id"],
-                env=env,
-                deployed_by=actor,
-                config_hash=version["manifest_hash"],
             )
             store.insert_audit(
                 actor=actor,
                 action="version.promote",
                 object_type="version",
                 object_id=f"{tenant}/{name}@{semver}",
-                before_hash=previous["manifest_hash"] if previous else None,
+                before_hash=before_hash,
                 after_hash=version["manifest_hash"],
-                detail={"env": env, "replaced": previous["semver"] if previous else None},
+                detail={"env": env, "replaced": previous_env["semver"] if previous_env else None},
                 source_ip=source_ip,
             )
 
@@ -287,12 +305,13 @@ def promote_version(
         failures = "; ".join(f"{c.name}: {c.detail}" for c in rejection if not c.passed)
         raise RegistryError(f"kapı geçmedi — {failures}", status=409, code="gate_failed")
 
+    final_state = "active" if env == "prod" or version["state"] == "active" else "candidate"
     return {
         "semver": semver,
-        "state": "active",
+        "state": final_state,
         "env": env,
         "promotion_id": record["id"],
-        "replaced": previous["semver"] if previous else None,
+        "replaced": previous_env["semver"] if previous_env else None,
         "deployment_id": deployment["id"],
     }
 
@@ -307,6 +326,8 @@ def transition(
         except TransitionError as exc:
             raise RegistryError(str(exc), status=409, code="invalid_transition") from exc
         store.set_state(version["id"], target)
+        if target in ("deprecated", "retired", "blocked"):
+            store.stop_deployments(version["id"])
         store.insert_audit(
             actor=actor,
             action=f"version.{target}",
@@ -326,10 +347,12 @@ def resolve(*, tenant: str, name: str, env: str = "prod") -> dict:
     agent = store.get_agent(tenant, name)
     if not agent:
         raise RegistryError(f"{tenant}/{name} kayıtlı değil", status=404, code="agent_not_found")
-    version = store.get_active_version(agent["id"])
+    version = store.get_active_deployment(agent["id"], env)
     if not version:
         raise RegistryError(
-            f"{tenant}/{name} için aktif sürüm yok", status=404, code="no_active_version"
+            f"{tenant}/{name} için {env} ortamında aktif sürüm yok",
+            status=404,
+            code="no_active_deployment",
         )
 
     expires_at = datetime.now(UTC) + timedelta(seconds=get_settings().resolve_ttl_seconds)
@@ -337,6 +360,7 @@ def resolve(*, tenant: str, name: str, env: str = "prod") -> dict:
         agent=name,
         tenant=tenant,
         version=version["semver"],
+        env=env,
         manifest_hash=version["manifest_hash"],
         expires_at=expires_at.isoformat(),
     )
@@ -358,7 +382,13 @@ def resolve(*, tenant: str, name: str, env: str = "prod") -> dict:
 
 
 def build_signed_payload(
-    *, agent: str, tenant: str, version: str, manifest_hash: str, expires_at: str
+    *,
+    agent: str,
+    tenant: str,
+    version: str,
+    env: str,
+    manifest_hash: str,
+    expires_at: str,
 ) -> str:
     """resolve yanıtının imzalanan gövdesi — runtime da aynı biçimi doğrular."""
     return json.dumps(
@@ -366,6 +396,7 @@ def build_signed_payload(
             "agent": agent,
             "tenant": tenant,
             "version": version,
+            "env": env,
             "manifest_hash": manifest_hash,
             "expires_at": expires_at,
         },

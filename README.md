@@ -10,6 +10,7 @@ Tasarım gerekçeleri: [PLAN.md](PLAN.md)
 ## Hızlı başlangıç
 
 ```bash
+cp .env.example .env             # geliştirme anahtarları dahil
 docker compose up -d db          # Postgres 16 (port 5433)
 uv sync --extra dev
 uv run agent-registry init-db
@@ -17,6 +18,15 @@ uv run agent-registry serve --port 8100
 ```
 
 API: <http://127.0.0.1:8100/docs>
+
+Tüm `/v1/*` uçları `Authorization: Bearer <anahtar>` ister; `/healthz` açıktır.
+`.env.example` üç geliştirme anahtarı tanımlar (`dev-publisher`, `dev-runtime`,
+`dev-security`). Anahtar yoksa sunucu başlamaz.
+
+```bash
+curl -H "Authorization: Bearer dev-runtime" \
+  http://127.0.0.1:8100/v1/agents/denizbank/claim-triage/resolve
+```
 
 ## CI kapısı
 
@@ -39,7 +49,7 @@ draft ──validate──► validated ──promote──► active ──depr
 
 - Ajan başına **tek aktif sürüm** (kısmi unique index ile DB'de zorunlu)
 - Manifest satırı **değiştirilemez** (trigger); yeni sürüm açılır
-- `resolve` yalnız aktif sürümü döndürür ve yanıtı HMAC ile imzalar
+- `resolve` ortamdaki aktif deployment'ı döndürür ve yanıtı (`env` dahil) HMAC ile imzalar
 
 ## Testler
 
