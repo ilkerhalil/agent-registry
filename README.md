@@ -32,7 +32,9 @@ place (new version = new row), a runtime never trusts an unsigned answer, and th
 | REST API, Bearer keys with roles and tenant scope | Multi-region deployment |
 | Server-side CI gate (7 checks), re-run on promotion | Cross-tenant sharing |
 | Runtime SDK: signature + hash + expiry verified locally, TTL cache, offline fallback | Load testing |
-| 54 tests, ruff clean | Managed hosting |
+| Eval artifacts in a content-addressed store + regression check against the active version | Managed hosting |
+| Prometheus metrics (versions by state, active deployments, stale, blocked) | |
+| 67 tests, ruff clean, GitHub Actions CI | |
 
 ## Try it in one minute
 
@@ -86,6 +88,7 @@ POST /v1/agents/{tenant}/{name}/versions/{v}:retire
 GET  /v1/agents/{tenant}/{name}/resolve?env=  signed resolve for the runtime
 GET  /v1/agents?tenant=&owner=                inventory
 GET  /v1/audit?object_type=&object_id=        audit trail
+GET  /metrics                                 Prometheus (security role)
 GET  /healthz
 ```
 
@@ -146,10 +149,10 @@ passed is never trusted:
 | # | Scope | Status |
 |---|---|---|
 | M0 | Schema, manifest, signing, lifecycle, API, gate CLI, tests, docker | done |
-| M1 | Eval artifacts in object storage + regression comparison | next |
+| M1 | Eval artifacts (content-addressed) + regression comparison | done |
 | M2 | Tool/model catalogues moved into the registry + impact analysis | planned |
 | M3 | Cosign backend + runtime SDK | SDK done, Cosign pending |
-| M4 | Metrics (coverage, blocked calls, stale versions), Prometheus | planned |
+| M4 | Metrics (versions by state, deployments, stale, blocked), Prometheus | done |
 
 ## Layout
 
@@ -161,8 +164,9 @@ src/agent_registry/
   service.py    lifecycle rules, gate re-check, signed resolve
   api.py        FastAPI routes, auth, error mapping
   runtime.py    client SDK: verify locally, TTL cache, offline fallback
+  artifacts.py  content-addressed eval artifacts (filesystem + S3 backends)
   gate.py       7 checks over catalogues
-tests/          54 tests
+tests/          67 tests
 examples/       demo.py, example manifest + eval result
 catalogs/       tools.yaml, models.yaml, teams.yaml
 ```

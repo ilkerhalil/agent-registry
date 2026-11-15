@@ -57,11 +57,13 @@ EVAL = {
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _auth_env():
+def _auth_env(tmp_path_factory):
     os.environ["REGISTRY_API_KEYS"] = json.dumps(API_KEYS)
+    os.environ["ARTIFACT_DIR"] = str(tmp_path_factory.mktemp("artifacts"))
     get_settings.cache_clear()
     yield
     os.environ.pop("REGISTRY_API_KEYS", None)
+    os.environ.pop("ARTIFACT_DIR", None)
     get_settings.cache_clear()
 
 

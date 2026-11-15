@@ -63,9 +63,12 @@ def close_pool() -> None:
 
 
 def init_schema() -> None:
-    """sql/001_schema.sql dosyasını uygular (idempotent)."""
-    schema = Path(__file__).resolve().parents[2] / "sql" / "001_schema.sql"
-    sql = schema.read_text(encoding="utf-8")
+    """sql/*.sql dosyalarını sırayla uygular (her dosya idempotent olmalı)."""
+    sql_dir = Path(__file__).resolve().parents[2] / "sql"
+    statements = [p.read_text(encoding="utf-8") for p in sorted(sql_dir.glob("*.sql"))]
+    if not statements:
+        raise RuntimeError(f"şema dosyası bulunamadı: {sql_dir}")
     with pool().connection() as conn:
-        conn.execute(sql)
+        for sql in statements:
+            conn.execute(sql)
         conn.commit()

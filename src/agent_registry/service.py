@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from . import signing, store
+from .artifacts import FileSystemStore, canonical_bytes
 from .config import get_settings
 from .db import transaction
 from .gate import gate_passed, load_catalogs, run_gate
@@ -142,11 +143,26 @@ def validate_version(
         version = _require_version(tenant, name, semver)
         manifest = AgentManifest.model_validate(version["manifest_json"])
         _check_eval_gates(manifest, eval_result)
+
+        baseline = _baseline_eval(version["agent_id"], exclude_version_id=version["id"])
+        if baseline:
+            rate = float(eval_result["success_rate"])
+            tolerance = get_settings().eval_max_regression
+            if rate < baseline["success_rate"] - tolerance:
+                raise RegistryError(
+                    f"regresyon: {rate:.3f} < {baseline['success_rate']:.3f} - {tolerance:.3f} "
+                    f"(aktif sürüm {baseline['version']})",
+                    status=422,
+                    code="eval_regression",
+                )
+
         try:
             check_transition(version["state"], "validated")
         except TransitionError as exc:
             raise RegistryError(str(exc), status=409, code="invalid_transition") from exc
-        store.set_eval_result(version["id"], eval_result, eval_result["suite"])
+
+        artifact = _artifact_store().put(canonical_bytes(eval_result))
+        store.set_eval_result(version["id"], eval_result, eval_result["suite"], artifact)
         store.set_state(version["id"], "validated")
         store.insert_audit(
             actor=actor,
@@ -154,7 +170,11 @@ def validate_version(
             object_type="version",
             object_id=f"{tenant}/{name}@{semver}",
             after_hash=version["manifest_hash"],
-            detail={"success_rate": eval_result["success_rate"]},
+            detail={
+                "success_rate": eval_result["success_rate"],
+                "artifact": artifact,
+                "baseline": baseline,
+            },
             source_ip=source_ip,
         )
     return {"semver": semver, "state": "validated", "success_rate": eval_result["success_rate"]}
@@ -188,11 +208,35 @@ def _check_eval_gates(manifest: AgentManifest, eval_result: dict) -> None:
             )
 
 
+def _artifact_store() -> FileSystemStore:
+    return FileSystemStore(get_settings().artifact_dir)
+
+
+def _baseline_eval(agent_id: int, exclude_version_id: int | None = None) -> dict | None:
+    """Karşılaştırma tabanı: ajanın aktif sürümünün eval sonucu."""
+    active = store.get_active_version(agent_id)
+    if not active or active["id"] == exclude_version_id:
+        return None
+    result = active.get("eval_result") or {}
+    rate = result.get("success_rate")
+    if rate is None:
+        return None
+    return {"version": active["semver"], "success_rate": float(rate)}
+
+
 def _evaluate_gate(tenant: str, manifest: AgentManifest, version: dict) -> list:
     """Terfi kararı için kapıyı sunucu tarafında yeniden koşar (istemciye güvenilmez)."""
     catalogs = load_catalogs(get_settings().catalog_dir)
     conflicts = store.active_scopes_by_team(tenant)
-    return run_gate(manifest, version.get("eval_result"), catalogs, conflicts)
+    baseline = _baseline_eval(version["agent_id"], exclude_version_id=version["id"])
+    return run_gate(
+        manifest,
+        version.get("eval_result"),
+        catalogs,
+        conflicts,
+        baseline=baseline,
+        max_regression=get_settings().eval_max_regression,
+    )
 
 
 def _gate_payload(checks: list) -> dict:

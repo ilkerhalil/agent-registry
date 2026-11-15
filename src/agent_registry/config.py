@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     registry_signing_key: str = "dev-only-change-me"
     resolve_ttl_seconds: int = 300
     catalog_dir: str = "./catalogs"
+    artifact_dir: str = "./artifacts"
+    # Yeni sürümün eval başarı oranı, aktif sürümün altına bu kadar düşemez.
+    eval_max_regression: float = 0.02
     api_keys: dict[str, ApiKey] = Field(default_factory=dict, validation_alias="REGISTRY_API_KEYS")
 
 

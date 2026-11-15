@@ -100,11 +100,15 @@ def set_state(version_id: int, state: str) -> None:
         cur.execute("UPDATE agent_version SET state = %s WHERE id = %s", (state, version_id))
 
 
-def set_eval_result(version_id: int, eval_result: dict, suite: str) -> None:
+def set_eval_result(
+    version_id: int, eval_result: dict, suite: str, artifact: str | None = None
+) -> None:
     with connection() as conn, conn.cursor() as cur:
         cur.execute(
-            "UPDATE agent_version SET eval_result = %s, eval_suite = %s WHERE id = %s",
-            (Jsonb(eval_result), suite, version_id),
+            "UPDATE agent_version "
+            "SET eval_result = %s, eval_suite = %s, eval_artifact = COALESCE(%s, eval_artifact) "
+            "WHERE id = %s",
+            (Jsonb(eval_result), suite, artifact, version_id),
         )
 
 
@@ -251,6 +255,61 @@ def active_scopes_by_team(tenant: str) -> list[dict]:
             (tenant,),
         )
         return cur.fetchall()
+
+
+def list_tenants() -> list[str]:
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT DISTINCT tenant FROM agent ORDER BY tenant")
+        return [row["tenant"] for row in cur.fetchall()]
+
+
+def metrics_snapshot(tenant: str | None = None) -> dict:
+    """Prometheus için sayaçlar: ajan, sürüm durumu, deployment, bayat sürüm."""
+    where = " WHERE a.tenant = %s" if tenant else ""
+    params: list[Any] = [tenant] if tenant else []
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT count(*) AS n FROM agent a{where}", params)
+        agents = cur.fetchone()["n"]
+
+        cur.execute(
+            f"""SELECT v.state, count(*) AS n
+                FROM agent_version v JOIN agent a ON a.id = v.agent_id{where}
+                GROUP BY v.state""",
+            params,
+        )
+        versions = {row["state"]: row["n"] for row in cur.fetchall()}
+
+        cur.execute(
+            f"""SELECT d.env, count(*) AS n
+                FROM deployment d JOIN agent a ON a.id = d.agent_id
+                WHERE d.status = 'active'{(" AND a.tenant = %s") if tenant else ""}
+                GROUP BY d.env""",
+            params,
+        )
+        deployments = {row["env"]: row["n"] for row in cur.fetchall()}
+
+        cur.execute(
+            f"""SELECT count(*) AS n FROM agent_version v JOIN agent a ON a.id = v.agent_id
+                WHERE v.state = 'active' AND v.state_changed_at < now() - interval '90 days'
+                {(" AND a.tenant = %s") if tenant else ""}""",
+            params,
+        )
+        stale = cur.fetchone()["n"]
+
+        cur.execute(
+            f"""SELECT count(*) AS n FROM agent_version v JOIN agent a ON a.id = v.agent_id
+                WHERE v.state = 'blocked'{(" AND a.tenant = %s") if tenant else ""}""",
+            params,
+        )
+        blocked = cur.fetchone()["n"]
+
+    return {
+        "agents": agents,
+        "versions": versions,
+        "deployments": deployments,
+        "stale_active": stale,
+        "blocked": blocked,
+    }
 
 
 def audit_events(

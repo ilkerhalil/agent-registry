@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from psycopg.errors import IntegrityError
 from pydantic import BaseModel, Field
 
@@ -226,6 +226,49 @@ def resolve(
     require_role(principal, "runtime", "publisher")
     require_tenant(principal, tenant)
     return service.resolve(tenant=tenant, name=name, env=env)
+
+
+@app.get("/metrics")
+def metrics(principal: PrincipalDep):
+    """Prometheus metin biçimi. Toplamlar kiracı kapsamlıdır (security rolü)."""
+    require_role(principal, "security")
+    tenants = store.list_tenants() if "*" in principal.tenants else principal.tenants
+    lines = [
+        "# HELP agent_registry_agents_total Kayıtlı ajan sayısı",
+        "# TYPE agent_registry_agents_total gauge",
+        "# HELP agent_registry_versions_total Sürüm sayısı (duruma göre)",
+        "# TYPE agent_registry_versions_total gauge",
+        "# HELP agent_registry_deployments_total Aktif deployment sayısı (ortama göre)",
+        "# TYPE agent_registry_deployments_total gauge",
+        "# HELP agent_registry_stale_active_versions 90 günden uzun süredir aktif kalan sürümler",
+        "# TYPE agent_registry_stale_active_versions gauge",
+        "# HELP agent_registry_blocked_versions_total Bloklanmış sürümler",
+        "# TYPE agent_registry_blocked_versions_total gauge",
+    ]
+    for tenant in tenants or [None]:
+        snap = store.metrics_snapshot(tenant)
+        label = f'tenant="{tenant}"' if tenant else ""
+        for state, count in sorted(snap["versions"].items()):
+            lines.append(
+                f'agent_registry_versions_total{{state="{state}",{label}}} {count}'
+                if label
+                else f'agent_registry_versions_total{{state="{state}"}} {count}'
+            )
+        for env, count in sorted(snap["deployments"].items()):
+            lines.append(
+                f'agent_registry_deployments_total{{env="{env}",{label}}} {count}'
+                if label
+                else f'agent_registry_deployments_total{{env="{env}"}} {count}'
+            )
+        if tenant:
+            lines.append(f"agent_registry_agents_total{{{label}}} {snap['agents']}")
+            lines.append(f"agent_registry_stale_active_versions{{{label}}} {snap['stale_active']}")
+            lines.append(f"agent_registry_blocked_versions_total{{{label}}} {snap['blocked']}")
+        else:
+            lines.append(f"agent_registry_agents_total {snap['agents']}")
+            lines.append(f"agent_registry_stale_active_versions {snap['stale_active']}")
+            lines.append(f"agent_registry_blocked_versions_total {snap['blocked']}")
+    return PlainTextResponse("\n".join(lines) + "\n")
 
 
 @app.get("/v1/audit")

@@ -52,6 +52,8 @@ def run_gate(
     eval_result: dict | None,
     catalogs: dict,
     conflicts: list[dict] | None = None,
+    baseline: dict | None = None,
+    max_regression: float = 0.02,
 ) -> list[Check]:
     checks: list[Check] = []
 
@@ -82,6 +84,13 @@ def run_gate(
         for required in m.evals.must_pass:
             if not (suites.get(required) or {}).get("passed"):
                 problems.append(f"zorunlu suite geçmedi: {required}")
+        if baseline and baseline.get("success_rate") is not None:
+            previous = float(baseline["success_rate"])
+            if rate < previous - max_regression:
+                problems.append(
+                    f"regresyon: {rate:.3f} < {previous:.3f} - {max_regression:.3f} "
+                    f"(aktif sürüm {baseline.get('version', '?')})"
+                )
         checks.append(
             Check(
                 "eval",
