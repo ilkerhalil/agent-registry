@@ -348,6 +348,10 @@ catalogs/       tools.yaml, models.yaml, teams.yaml
 v0.2.0. The API and schema may still change between minor versions. Issues and design arguments are
 welcome — especially about where a registry should *refuse* to be helpful.
 
+## Further reading
+
+- [The three contracts](docs/article-three-contracts.md) — why each contract exists and what it stops
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
