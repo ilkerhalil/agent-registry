@@ -12,7 +12,7 @@ from .auth import AuthError, Principal, authenticate, require_role, require_tena
 from .manifest import AgentManifest
 from .service import RegistryError
 
-app = FastAPI(title="Agent Registry", version="0.1.0")
+app = FastAPI(title="Agent Registry", version="0.2.0")
 
 
 # ------------------------------------------------------------------------ modeller
