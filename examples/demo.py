@@ -54,7 +54,9 @@ def main() -> int:
     init_schema()
     client = TestClient(app)
 
-    manifest = yaml.safe_load((ROOT / "examples" / "claim-triage.manifest.yaml").read_text(encoding="utf-8"))
+    manifest = yaml.safe_load(
+        (ROOT / "examples" / "claim-triage.manifest.yaml").read_text(encoding="utf-8")
+    )
     evals = json.loads((ROOT / "examples" / "claim-triage.eval.json").read_text(encoding="utf-8"))
 
     # Her çalıştırmada yeni sürüm: demo tekrar edilebilir olsun, kayıt çakışmasın.

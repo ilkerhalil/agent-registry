@@ -104,7 +104,7 @@ runtime = AgentRuntime(
     tenant="acme",
 )
 agent = runtime.resolve("claim-triage", env="prod")
-agent.manifest_obj.data_scopes     # what this version may actually reach
+agent.manifest_obj.data_scopes  # what this version may actually reach
 ```
 
 If the registry is unreachable the SDK falls back to the last verified copy on disk — but only while
