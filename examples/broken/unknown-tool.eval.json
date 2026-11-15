@@ -1,0 +1,11 @@
+{
+  "suite": "invoice-audit-v1",
+  "success_rate": 0.9,
+  "total_cases": 120,
+  "suites": {
+    "regression-core": {
+      "passed": true,
+      "success_rate": 0.9
+    }
+  }
+}

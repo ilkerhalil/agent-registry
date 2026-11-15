@@ -1,0 +1,11 @@
+{
+  "suite": "summarizer-v3",
+  "success_rate": 0.85,
+  "total_cases": 90,
+  "suites": {
+    "regression-core": {
+      "passed": true,
+      "success_rate": 0.85
+    }
+  }
+}

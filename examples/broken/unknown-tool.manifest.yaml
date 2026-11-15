@@ -1,0 +1,21 @@
+# Fails gate check 4: billing_export is not in the tool catalogue.
+agent: invoice-audit
+version: 1.0.0
+owner: support-ops
+tenant: acme
+purpose: "Audits invoice line items"
+model_policy:
+  primary: small-classifier
+  budget_usd_per_task: 0.001
+  max_latency_p95_ms: 1200
+tools:
+  - kb_search
+  - billing_export
+data_scopes:
+  - kb:read
+evals:
+  suite: invoice-audit-v1
+  min_success_rate: 0.85
+sla:
+  availability: 99.0
+  fallback: "human queue"

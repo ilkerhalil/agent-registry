@@ -1,0 +1,27 @@
+agent: support-triage
+version: 1.4.0
+owner: support-ops
+tenant: acme
+purpose: "Müşteri destek taleplerini konuya göre yönlendirir ve ilk yanıtı hazırlar"
+model_policy:
+  primary: small-classifier
+  escalate_to: large-reasoner
+  budget_usd_per_task: 0.002
+  max_latency_p95_ms: 1500
+tools:
+  - kb_search
+  - ticket_create
+data_scopes:
+  - kb:read
+  - tickets:read
+  - tickets:write
+evals:
+  suite: support-triage-v2
+  min_success_rate: 0.90
+  must_pass:
+    - regression-core
+human_gate: "iade veya ücret iadesi içeren yanıtlar onaya gider"
+sla:
+  availability: 99.0
+  fallback: "insan kuyruğu"
+retirement: "halef sürüm 30 gün yeşil kaldıktan sonra"

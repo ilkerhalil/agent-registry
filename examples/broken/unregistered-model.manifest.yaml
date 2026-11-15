@@ -1,0 +1,20 @@
+# Fails gate check 5: shadow-model is not in the model catalogue.
+agent: summarizer
+version: 3.0.0
+owner: platform
+tenant: acme
+purpose: "Summarises meeting notes"
+model_policy:
+  primary: shadow-model
+  budget_usd_per_task: 0.003
+  max_latency_p95_ms: 2000
+tools:
+  - doc_fetch
+data_scopes:
+  - tickets:read
+evals:
+  suite: summarizer-v3
+  min_success_rate: 0.80
+sla:
+  availability: 99.0
+  fallback: "human queue"

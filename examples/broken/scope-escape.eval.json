@@ -1,0 +1,11 @@
+{
+  "suite": "people-analytics-v1",
+  "success_rate": 0.86,
+  "total_cases": 70,
+  "suites": {
+    "regression-core": {
+      "passed": true,
+      "success_rate": 0.86
+    }
+  }
+}

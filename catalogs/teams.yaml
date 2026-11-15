@@ -10,3 +10,9 @@ teams:
     allowed_scopes:
       - tickets:read
       - tickets:write
+  support-ops:
+    on_call: support-nobet
+    allowed_scopes:
+      - kb:read
+      - tickets:read
+      - tickets:write

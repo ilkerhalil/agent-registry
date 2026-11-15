@@ -1,14 +1,20 @@
-# Araç kataloğu — CI kapısı manifestin kullandığı araçları burada arar.
+# Tool catalogue — the CI gate looks up every tool a manifest uses.
 tools:
   - name: policy_lookup
     owner: platform
-    description: Poliçe/mevzuat araması (salt okunur)
+    description: Policy and regulation lookup (read-only)
   - name: claim_read
     owner: hasar-operasyon
-    description: Hasar dosyası okuma
+    description: Read a claim file
   - name: branch_assign
     owner: hasar-operasyon
-    description: Branş atama (yazma)
+    description: Assign a claim to a branch (write)
   - name: ticket_create
     owner: platform
-    description: ITSM kaydı açma
+    description: Open an ITSM ticket
+  - name: kb_search
+    owner: platform
+    description: Search the knowledge base (read-only)
+  - name: doc_fetch
+    owner: platform
+    description: Fetch a knowledge-base article by id

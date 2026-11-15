@@ -1,0 +1,21 @@
+# Fails gate check 3: salaries:write is not in the team's allow-list.
+agent: people-analytics
+version: 1.2.0
+owner: support-ops
+tenant: acme
+purpose: "Reports support team performance"
+model_policy:
+  primary: small-classifier
+  budget_usd_per_task: 0.002
+  max_latency_p95_ms: 1800
+tools:
+  - kb_search
+data_scopes:
+  - kb:read
+  - salaries:write
+evals:
+  suite: people-analytics-v1
+  min_success_rate: 0.80
+sla:
+  availability: 99.0
+  fallback: "human queue"

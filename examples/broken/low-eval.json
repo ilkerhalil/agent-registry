@@ -1,0 +1,8 @@
+{
+  "suite": "support-triage-v2",
+  "success_rate": 0.61,
+  "total_cases": 250,
+  "suites": {
+    "regression-core": {"passed": false, "success_rate": 0.58}
+  }
+}

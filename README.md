@@ -77,6 +77,45 @@ after signing. It recomputes the hash, sees the mismatch and refuses to run the 
 check alone would pass — the signature covers `manifest_hash`, so unless the content is re-hashed
 locally, a tampered manifest still verifies.
 
+## Examples
+
+`examples/` ships three manifests that pass the gate and four that are built to fail — one per check,
+so the gate's behaviour is something you can run rather than something you have to trust.
+
+```bash
+bash examples/gate_all.sh
+```
+
+```
+PASS expected
+examples/claim-triage.manifest.yaml                  PASS
+examples/support-triage.manifest.yaml                PASS
+examples/kb-rag.manifest.yaml                        PASS
+
+FAIL expected — each one trips a different check
+examples/broken/unknown-tool.manifest.yaml           FAIL
+examples/broken/unregistered-model.manifest.yaml     FAIL
+examples/broken/scope-escape.manifest.yaml           FAIL
+examples/support-triage.manifest.yaml                FAIL
+
+pass=3 fail=4
+```
+
+| Example | What it shows |
+|---|---|
+| `claim-triage` | Happy path: three tools, classifier + escalation model, human gate above a threshold |
+| `support-triage` | Second domain: ticket creation, narrower scopes, stricter human gate |
+| `kb-rag` | Retrieval-augmented answering: embeddings, one read-only scope, citation-grounding suite |
+| `broken/unknown-tool` | Fails check 4 — calls a tool nobody registered |
+| `broken/unregistered-model` | Fails check 5 — a shadow model in `model_policy` |
+| `broken/scope-escape` | Fails check 3 — asks for a scope its team may not have |
+| `broken/low-eval.json` | Fails check 2 — success rate below the manifest's own threshold |
+| `runtime_offline.py` | The SDK with no registry: cache fallback, expiry, tamper rejection |
+| `http_walkthrough.sh` | The same lifecycle over plain HTTP with `curl` and `jq` |
+
+`tests/test_examples.py` keeps them honest: a gate rule change fails the suite instead of quietly
+turning the examples into wrong documentation.
+
 ## Running the service
 
 ```bash
@@ -216,12 +255,12 @@ eval artifacts, cosign for signatures, Prometheus for metrics.
 ## Tests
 
 ```bash
-uv run pytest                                   # 96 tests; 5 skip when cosign is absent
+uv run pytest                                   # 99 tests; 5 skip when cosign is absent
 uv run pytest --cov=src/agent_registry          # report; CI fails under 80%
 COSIGN_BIN=$(command -v cosign) uv run pytest   # run the cosign tests too
 ```
 
-96 tests, 92.6% line coverage, CI green on every push. Deliberately not split by marker:
+99 tests, 92.6% line coverage, CI green on every push. Deliberately not split by marker:
 
 - **Pure unit** — `manifest`, `signing`, `signers`, `states`, `gate`, `artifacts` with a fake S3 client.
 - **Integration** — everything else against a real Postgres, schema applied per session, tables
@@ -245,7 +284,7 @@ src/agent_registry/
   artifacts.py  content-addressed eval artifacts (filesystem + S3)
   gate.py       7 checks over catalogues
   cli.py        serve, init-db, gate, agents
-tests/          96 tests (unit, Postgres integration, real HTTP, concurrency)
+tests/          99 tests (unit, Postgres integration, real HTTP, concurrency, examples)
 examples/       demo.py, example manifest + eval result
 catalogs/       tools.yaml, models.yaml, teams.yaml
 ```

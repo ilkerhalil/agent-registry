@@ -1,8 +1,11 @@
-# Model kataloğu — model geçidinde tanımlı olması gereken modeller.
+# Model catalogue — every model in model_policy must be registered here.
 models:
   - name: small-classifier
     provider: internal
-    note: System One sınıflandırıcı
+    note: System One classifier
   - name: large-reasoner
     provider: cloud
-    note: Belirsizlik yükseldiğinde devreye girer
+    note: Takes over when uncertainty is high
+  - name: embedding-small
+    provider: internal
+    note: Retrieval embeddings, no generation

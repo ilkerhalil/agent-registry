@@ -146,7 +146,7 @@ tablosuna `rejected` kaydı ve `audit_event`'e `version.promote_rejected` yazıl
 
 | # | İçerik | Durum |
 |---|---|---|
-| M0 | Şema, manifest, imza, yaşam döngüsü, API, kapı CLI, testler, docker | **TAMAM** (96 test, %93 kapsam) |
+| M0 | Şema, manifest, imza, yaşam döngüsü, API, kapı CLI, testler, docker | **TAMAM** (99 test, %93 kapsam) |
 | M1 | Eval sonuçlarının kalıcı referansı (içerik adresli depo) + regresyon karşılaştırması | **TAMAM** |
 | M2 | Araç/model kataloglarının registry'ye taşınması + etki analizi | **TAMAM** |
 | M3 | Cosign imza backend'i + runtime SDK (`resolve` istemcisi) | **TAMAM** |

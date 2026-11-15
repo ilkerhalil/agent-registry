@@ -1,0 +1,9 @@
+{
+  "suite": "kb-rag-v1",
+  "success_rate": 0.902,
+  "total_cases": 180,
+  "suites": {
+    "citation-grounding": {"passed": true, "success_rate": 0.95},
+    "adversarial": {"passed": true, "success_rate": 0.84}
+  }
+}

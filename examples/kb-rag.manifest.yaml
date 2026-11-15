@@ -1,0 +1,24 @@
+agent: kb-rag
+version: 0.9.2
+owner: support-ops
+tenant: acme
+purpose: "Destek makalelerinden kaynak göstererek yanıt üretir"
+model_policy:
+  primary: embedding-small
+  escalate_to: large-reasoner
+  budget_usd_per_task: 0.006
+  max_latency_p95_ms: 4000
+tools:
+  - kb_search
+  - doc_fetch
+data_scopes:
+  - kb:read
+evals:
+  suite: kb-rag-v1
+  min_success_rate: 0.88
+  must_pass:
+    - citation-grounding
+human_gate: "hukuki veya tıbbi konularda yanıt verilmez, insana aktarılır"
+sla:
+  availability: 99.0
+  fallback: "makale bağlantısı göster"
