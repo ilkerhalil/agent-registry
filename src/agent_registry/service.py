@@ -4,12 +4,13 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from . import signing, store
+from . import store
 from .artifacts import FileSystemStore, canonical_bytes
 from .config import get_settings
 from .db import transaction
 from .gate import gate_passed, load_catalogs, run_gate
 from .manifest import AgentManifest
+from .signers import get_signer
 from .states import TransitionError, check_transition
 
 
@@ -208,6 +209,25 @@ def _check_eval_gates(manifest: AgentManifest, eval_result: dict) -> None:
             )
 
 
+def load_catalog_data() -> dict:
+    """Katalogları registry'den okur; boşsa YAML dosyalarına düşer (yerel/CI)."""
+    tools = store.list_tools()
+    models = store.list_models()
+    teams = store.list_teams()
+    if not (tools or models or teams):
+        return load_catalogs(get_settings().catalog_dir)
+    return {
+        "tools": {"tools": tools},
+        "models": {"models": models},
+        "teams": {
+            "teams": {
+                name: {"on_call": row["on_call"], "allowed_scopes": row["allowed_scopes"]}
+                for name, row in teams.items()
+            }
+        },
+    }
+
+
 def _artifact_store() -> FileSystemStore:
     return FileSystemStore(get_settings().artifact_dir)
 
@@ -226,7 +246,7 @@ def _baseline_eval(agent_id: int, exclude_version_id: int | None = None) -> dict
 
 def _evaluate_gate(tenant: str, manifest: AgentManifest, version: dict) -> list:
     """Terfi kararı için kapıyı sunucu tarafında yeniden koşar (istemciye güvenilmez)."""
-    catalogs = load_catalogs(get_settings().catalog_dir)
+    catalogs = load_catalog_data()
     conflicts = store.active_scopes_by_team(tenant)
     baseline = _baseline_eval(version["agent_id"], exclude_version_id=version["id"])
     return run_gate(
@@ -408,7 +428,7 @@ def resolve(*, tenant: str, name: str, env: str = "prod") -> dict:
         manifest_hash=version["manifest_hash"],
         expires_at=expires_at.isoformat(),
     )
-    signature = signing.sign(signed_payload, get_settings().registry_signing_key)
+    signature = get_signer(get_settings()).sign(signed_payload)
 
     return {
         "agent": name,

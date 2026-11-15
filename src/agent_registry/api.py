@@ -228,6 +228,90 @@ def resolve(
     return service.resolve(tenant=tenant, name=name, env=env)
 
 
+# ------------------------------------------------------------------ kataloglar (M2)
+
+
+class ToolIn(BaseModel):
+    owner: str = Field(min_length=1)
+    description: str = ""
+
+
+class ModelIn(BaseModel):
+    provider: str = Field(min_length=1)
+    note: str = ""
+
+
+class TeamIn(BaseModel):
+    on_call: str = Field(min_length=1)
+    allowed_scopes: list[str] = Field(default_factory=list)
+
+
+@app.put("/v1/catalogs/tools/{name}")
+def upsert_tool(name: str, body: ToolIn, principal: PrincipalDep):
+    require_role(principal, "publisher", "security")
+    store.upsert_tool(name, body.owner, body.description)
+    store.insert_audit(
+        actor=principal.actor,
+        action="catalog.tool.upsert",
+        object_type="tool",
+        object_id=name,
+        detail={"owner": body.owner},
+    )
+    return {"name": name, "owner": body.owner, "description": body.description}
+
+
+@app.put("/v1/catalogs/models/{name}")
+def upsert_model(name: str, body: ModelIn, principal: PrincipalDep):
+    require_role(principal, "publisher", "security")
+    store.upsert_model(name, body.provider, body.note)
+    store.insert_audit(
+        actor=principal.actor,
+        action="catalog.model.upsert",
+        object_type="model",
+        object_id=name,
+        detail={"provider": body.provider},
+    )
+    return {"name": name, "provider": body.provider, "note": body.note}
+
+
+@app.put("/v1/catalogs/teams/{name}")
+def upsert_team(name: str, body: TeamIn, principal: PrincipalDep):
+    require_role(principal, "publisher", "security")
+    store.upsert_team(name, body.on_call, body.allowed_scopes)
+    store.insert_audit(
+        actor=principal.actor,
+        action="catalog.team.upsert",
+        object_type="team",
+        object_id=name,
+        detail={"on_call": body.on_call, "scopes": body.allowed_scopes},
+    )
+    return {"name": name, "on_call": body.on_call, "allowed_scopes": body.allowed_scopes}
+
+
+@app.get("/v1/catalogs/tools")
+def get_tools(principal: PrincipalDep):
+    return {"tools": store.list_tools()}
+
+
+@app.get("/v1/catalogs/models")
+def get_models(principal: PrincipalDep):
+    return {"models": store.list_models()}
+
+
+@app.get("/v1/catalogs/teams")
+def get_teams(principal: PrincipalDep):
+    return {"teams": store.list_teams()}
+
+
+@app.get("/v1/catalogs/{kind}/{name}/impact")
+def catalog_impact(kind: str, name: str, principal: PrincipalDep):
+    """Etki analizi: bu araç/model aktif sürümlerde nerede kullanılıyor?"""
+    require_role(principal, "publisher", "security")
+    if kind not in ("tools", "models"):
+        raise RegistryError("geçersiz katalog türü", status=404, code="unknown_catalog")
+    return {"kind": kind, "name": name, "agents": store.agent_versions_using(kind, name)}
+
+
 @app.get("/metrics")
 def metrics(principal: PrincipalDep):
     """Prometheus metin biçimi. Toplamlar kiracı kapsamlıdır (security rolü)."""

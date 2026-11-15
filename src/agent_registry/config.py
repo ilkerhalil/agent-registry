@@ -20,6 +20,11 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql://registry:registry@127.0.0.1:5433/agentregistry"
     registry_signing_key: str = "dev-only-change-me"
+    # "hmac" (varsayılan) veya "cosign"
+    signing_backend: Literal["hmac", "cosign"] = "hmac"
+    cosign_key_path: str | None = None
+    cosign_pub_key_path: str | None = None
+    cosign_password: str = ""
     resolve_ttl_seconds: int = 300
     catalog_dir: str = "./catalogs"
     artifact_dir: str = "./artifacts"

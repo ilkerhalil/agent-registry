@@ -22,7 +22,7 @@ from pathlib import Path
 
 from .manifest import AgentManifest
 from .service import build_signed_payload
-from .signing import SignatureError, verify
+from .signers import HmacSigner, Signer, SignerError
 
 DEFAULT_TIMEOUT = 5.0
 
@@ -87,12 +87,15 @@ class AgentRuntime:
         cache_dir: str | Path | None = None,
         timeout: float = DEFAULT_TIMEOUT,
         fetch: Callable[[str, str, float], dict] | None = None,
+        verifier: Signer | None = None,
     ) -> None:
-        if not signing_key:
+        if not signing_key and verifier is None:
             raise ResolutionError("doğrulama anahtarı boş olamaz")
         self.base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._signing_key = signing_key
+        # HMAC varsayılan; Cosign gibi asimetrik backend'ler dışarıdan verilir.
+        self._verifier: Signer = verifier or HmacSigner(signing_key)
         self.tenant = tenant
         self.ttl_seconds = ttl_seconds
         self.timeout = timeout
@@ -156,8 +159,8 @@ class AgentRuntime:
             expires_at=payload["expires_at"],
         )
         try:
-            verify(signed, payload["signature"], self._signing_key)
-        except SignatureError as exc:
+            self._verifier.verify(signed, payload["signature"])
+        except SignerError as exc:
             raise ResolutionError(f"imza doğrulanamadı: {exc}") from exc
 
         try:

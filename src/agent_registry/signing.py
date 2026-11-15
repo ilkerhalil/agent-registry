@@ -11,7 +11,11 @@ import hmac
 PREFIX = "hmac-sha256:"
 
 
-class SignatureError(Exception):
+class SignerError(Exception):
+    """Tüm imza backend'lerinin ortak hata tipi."""
+
+
+class SignatureError(SignerError):
     pass
 
 

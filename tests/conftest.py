@@ -79,7 +79,8 @@ def _clean():
     with pool().connection() as conn:
         conn.execute(
             "TRUNCATE audit_event, dependency, promotion, deployment, "
-            "agent_version, agent RESTART IDENTITY CASCADE"
+            "agent_version, agent, tool_catalog, model_catalog, team_catalog "
+            "RESTART IDENTITY CASCADE"
         )
         conn.commit()
     yield

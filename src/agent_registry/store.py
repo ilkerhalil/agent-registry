@@ -257,6 +257,80 @@ def active_scopes_by_team(tenant: str) -> list[dict]:
         return cur.fetchall()
 
 
+# ------------------------------------------------------------------ kataloglar (M2)
+
+
+def upsert_tool(name: str, owner: str, description: str = "") -> None:
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO tool_catalog (name, owner, description) VALUES (%s, %s, %s)
+               ON CONFLICT (name) DO UPDATE
+                 SET owner = EXCLUDED.owner, description = EXCLUDED.description""",
+            (name, owner, description),
+        )
+
+
+def list_tools() -> list[dict]:
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT name, owner, description FROM tool_catalog ORDER BY name")
+        return cur.fetchall()
+
+
+def upsert_model(name: str, provider: str, note: str = "") -> None:
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO model_catalog (name, provider, note) VALUES (%s, %s, %s)
+               ON CONFLICT (name) DO UPDATE
+                 SET provider = EXCLUDED.provider, note = EXCLUDED.note""",
+            (name, provider, note),
+        )
+
+
+def list_models() -> list[dict]:
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT name, provider, note FROM model_catalog ORDER BY name")
+        return cur.fetchall()
+
+
+def upsert_team(name: str, on_call: str, allowed_scopes: list[str]) -> None:
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO team_catalog (name, on_call, allowed_scopes) VALUES (%s, %s, %s)
+               ON CONFLICT (name) DO UPDATE
+                 SET on_call = EXCLUDED.on_call, allowed_scopes = EXCLUDED.allowed_scopes""",
+            (name, on_call, Jsonb(allowed_scopes)),
+        )
+
+
+def list_teams() -> dict[str, dict]:
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT name, on_call, allowed_scopes FROM team_catalog ORDER BY name")
+        return {row["name"]: row for row in cur.fetchall()}
+
+
+def agent_versions_using(kind: str, value: str) -> list[dict]:
+    """Etki analizi: verilen aracı/modeli aktif sürümünde kullanan ajanlar."""
+    if kind == "tools":
+        condition = "jsonb_exists(v.manifest_json->'tools', %s)"
+    elif kind == "models":
+        condition = (
+            "(v.manifest_json->'model_policy'->>'primary' = %s "
+            "OR v.manifest_json->'model_policy'->>'escalate_to' = %s)"
+        )
+    else:
+        raise ValueError(f"bilinmeyen katalog türü: {kind}")
+    params = (value, value) if kind == "models" else (value,)
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""SELECT a.tenant, a.name, a.owner_team, v.semver
+                FROM agent_version v JOIN agent a ON a.id = v.agent_id
+                WHERE v.state = 'active' AND {condition}
+                ORDER BY a.tenant, a.name""",
+            params,
+        )
+        return cur.fetchall()
+
+
 def list_tenants() -> list[str]:
     with connection() as conn, conn.cursor() as cur:
         cur.execute("SELECT DISTINCT tenant FROM agent ORDER BY tenant")

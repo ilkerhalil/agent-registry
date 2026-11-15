@@ -34,7 +34,9 @@ place (new version = new row), a runtime never trusts an unsigned answer, and th
 | Runtime SDK: signature + hash + expiry verified locally, TTL cache, offline fallback | Load testing |
 | Eval artifacts in a content-addressed store + regression check against the active version | Managed hosting |
 | Prometheus metrics (versions by state, active deployments, stale, blocked) | |
-| 67 tests, ruff clean, GitHub Actions CI | |
+| Tool/model/team catalogues stored in the registry, with impact analysis | |
+| Cosign (Sigstore) signing backend next to HMAC; runtime verifies with the public key only | |
+| 78 tests, ruff clean, GitHub Actions CI | |
 
 ## Try it in one minute
 
@@ -89,6 +91,11 @@ GET  /v1/agents/{tenant}/{name}/resolve?env=  signed resolve for the runtime
 GET  /v1/agents?tenant=&owner=                inventory
 GET  /v1/audit?object_type=&object_id=        audit trail
 GET  /metrics                                 Prometheus (security role)
+PUT  /v1/catalogs/tools/{name}                register a tool (publisher/security)
+PUT  /v1/catalogs/models/{name}               register a model
+PUT  /v1/catalogs/teams/{name}                team + on-call + allowed scopes
+GET  /v1/catalogs/tools|models|teams          read catalogues
+GET  /v1/catalogs/{tools|models}/{name}/impact which active agents use it
 GET  /healthz
 ```
 
@@ -142,7 +149,14 @@ passed is never trusted:
 - **MLflow was not forced into this role.** It has no concept of agent identity, tool scope, permission
   sets or retirement semantics. The registry borrows Postgres, object storage and cosign instead.
 - **HMAC by default, Cosign as a backend.** The signing interface is deliberately narrow (`sign` /
-  `verify`) so a Sigstore backend drops in without touching callers.
+  `verify`), so the Sigstore backend drops in without touching callers. With Cosign the runtime holds
+  only the public key — no shared secret to leak:
+
+  ```bash
+  cosign generate-key-pair --output-key-prefix ./cosign
+  SIGNING_BACKEND=cosign COSIGN_KEY_PATH=./cosign.key COSIGN_PUB_KEY_PATH=./cosign.pub \
+  COSIGN_PASSWORD=... uv run agent-registry serve
+  ```
 
 ## Roadmap
 
@@ -150,8 +164,8 @@ passed is never trusted:
 |---|---|---|
 | M0 | Schema, manifest, signing, lifecycle, API, gate CLI, tests, docker | done |
 | M1 | Eval artifacts (content-addressed) + regression comparison | done |
-| M2 | Tool/model catalogues moved into the registry + impact analysis | planned |
-| M3 | Cosign backend + runtime SDK | SDK done, Cosign pending |
+| M2 | Tool/model catalogues moved into the registry + impact analysis | done |
+| M3 | Cosign backend + runtime SDK | done |
 | M4 | Metrics (versions by state, deployments, stale, blocked), Prometheus | done |
 
 ## Layout
@@ -165,8 +179,9 @@ src/agent_registry/
   api.py        FastAPI routes, auth, error mapping
   runtime.py    client SDK: verify locally, TTL cache, offline fallback
   artifacts.py  content-addressed eval artifacts (filesystem + S3 backends)
+  signers.py    signing backends: HMAC-SHA256, Cosign (Sigstore)
   gate.py       7 checks over catalogues
-tests/          67 tests
+tests/          78 tests
 examples/       demo.py, example manifest + eval result
 catalogs/       tools.yaml, models.yaml, teams.yaml
 ```
