@@ -76,20 +76,20 @@ def run_gate(
     else:
         problems = []
         if eval_result.get("suite") != m.evals.suite:
-            problems.append(f"suite uyuşmuyor ({eval_result.get('suite')} != {m.evals.suite})")
+            problems.append(f"suite mismatch ({eval_result.get('suite')} != {m.evals.suite})")
         rate = float(eval_result.get("success_rate", 0) or 0)
         if rate < m.evals.min_success_rate:
             problems.append(f"success_rate {rate:.3f} < {m.evals.min_success_rate:.3f}")
         suites = eval_result.get("suites") or {}
         for required in m.evals.must_pass:
             if not (suites.get(required) or {}).get("passed"):
-                problems.append(f"zorunlu suite geçmedi: {required}")
+                problems.append(f"required suite failed: {required}")
         if baseline and baseline.get("success_rate") is not None:
             previous = float(baseline["success_rate"])
             if rate < previous - max_regression:
                 problems.append(
                     f"regresyon: {rate:.3f} < {previous:.3f} - {max_regression:.3f} "
-                    f"(aktif sürüm {baseline.get('version', '?')})"
+                    f"(active version {baseline.get('version', '?')})"
                 )
         checks.append(
             Check(
@@ -102,19 +102,21 @@ def run_gate(
     # 3 — veri kapsamı ⊆ ekip izinleri
     team = _teams(catalogs).get(m.owner)
     if not team:
-        checks.append(Check("data_scopes", False, f"ekip tanımsız: {m.owner}"))
-        checks.append(Check("team", False, f"ekip tanımsız: {m.owner}"))
+        checks.append(Check("data_scopes", False, f"team not defined: {m.owner}"))
+        checks.append(Check("team", False, f"team not defined: {m.owner}"))
     else:
         allowed = set(team.get("allowed_scopes") or [])
         extra = sorted(set(m.data_scopes) - allowed)
         checks.append(
             Check(
-                "data_scopes", not extra, f"izin dışı: {extra}" if extra else "tüm kapsamlar izinli"
+                "data_scopes", not extra, f"not allowed: {extra}" if extra else "all scopes allowed"
             )
         )
         on_call = team.get("on_call")
         checks.append(
-            Check("team", bool(on_call), f"on-call: {on_call}" if on_call else "on-call tanımsız")
+            Check(
+                "team", bool(on_call), f"on-call: {on_call}" if on_call else "on-call not defined"
+            )
         )
 
     # 4 — araçlar katalogda
@@ -124,7 +126,7 @@ def run_gate(
         Check(
             "tools",
             not missing_tools,
-            f"eksik: {missing_tools}" if missing_tools else "tüm araçlar kayıtlı",
+            f"missing: {missing_tools}" if missing_tools else "all tools registered",
         )
     )
 
@@ -136,7 +138,7 @@ def run_gate(
         Check(
             "models",
             not missing_models,
-            f"eksik: {missing_models}" if missing_models else "tüm modeller kayıtlı",
+            f"missing: {missing_models}" if missing_models else "all models registered",
         )
     )
 
@@ -148,7 +150,7 @@ def run_gate(
         if c.get("owner_team") != m.owner and set(c.get("scopes") or []) & set(m.data_scopes)
     ]
     checks.append(
-        Check("scope_conflict", not clashes, f"çakışma: {clashes}" if clashes else "çakışma yok")
+        Check("scope_conflict", not clashes, f"conflict: {clashes}" if clashes else "no conflict")
     )
 
     return checks

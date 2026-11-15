@@ -38,7 +38,9 @@ def register_agent(
 ) -> dict:
     with transaction():
         if store.get_agent(tenant, name):
-            raise RegistryError(f"{tenant}/{name} zaten kayıtlı", status=409, code="already_exists")
+            raise RegistryError(
+                f"{tenant}/{name} is already registered", status=409, code="already_exists"
+            )
         agent = store.insert_agent(
             name=name,
             tenant=tenant,
@@ -72,28 +74,28 @@ def create_version(
         agent = store.get_agent(tenant, name)
         if not agent:
             raise RegistryError(
-                f"{tenant}/{name} kayıtlı değil", status=404, code="agent_not_found"
+                f"{tenant}/{name} is not registered", status=404, code="agent_not_found"
             )
         if agent["retired_at"]:
             raise RegistryError(
-                "emekli ajanın yeni sürümü açılamaz", status=409, code="agent_retired"
+                "cannot open a new version of a retired agent", status=409, code="agent_retired"
             )
         if manifest.agent != name or manifest.tenant != tenant:
             raise RegistryError(
-                "manifest içindeki agent/tenant, istek yoluyla uyuşmuyor",
+                "agent/tenant in the manifest do not match the request path",
                 status=422,
                 code="manifest_mismatch",
             )
         if manifest.owner != agent["owner_team"]:
             raise RegistryError(
-                f"manifest sahibi ({manifest.owner}), ajanın sahibiyle uyuşmuyor "
+                f"manifest owner ({manifest.owner}) does not match the agent owner "
                 f"({agent['owner_team']})",
                 status=422,
                 code="owner_mismatch",
             )
         if store.get_version(agent["id"], manifest.version):
             raise RegistryError(
-                f"{name}@{manifest.version} zaten kayıtlı", status=409, code="version_exists"
+                f"{name}@{manifest.version} already exists", status=409, code="version_exists"
             )
         manifest_json = json.loads(manifest.canonical_json())
         manifest_hash = manifest.sha256()
@@ -152,7 +154,7 @@ def validate_version(
             if rate < baseline["success_rate"] - tolerance:
                 raise RegistryError(
                     f"regresyon: {rate:.3f} < {baseline['success_rate']:.3f} - {tolerance:.3f} "
-                    f"(aktif sürüm {baseline['version']})",
+                    f"(active version {baseline['version']})",
                     status=422,
                     code="eval_regression",
                 )
@@ -185,14 +187,14 @@ def _check_eval_gates(manifest: AgentManifest, eval_result: dict) -> None:
     suite = eval_result.get("suite")
     if suite != manifest.evals.suite:
         raise RegistryError(
-            f"eval suite uyuşmuyor: beklenen {manifest.evals.suite}, gelen {suite}",
+            f"eval suite mismatch: expected {manifest.evals.suite}, got {suite}",
             status=422,
             code="eval_suite_mismatch",
         )
     rate = float(eval_result.get("success_rate", 0.0))
     if rate < manifest.evals.min_success_rate:
         raise RegistryError(
-            f"eval eşiği sağlanmadı: {rate:.3f} < {manifest.evals.min_success_rate:.3f}",
+            f"eval threshold not met: {rate:.3f} < {manifest.evals.min_success_rate:.3f}",
             status=422,
             code="eval_threshold",
         )
@@ -205,7 +207,7 @@ def _check_eval_gates(manifest: AgentManifest, eval_result: dict) -> None:
             )
         if not outcome.get("passed"):
             raise RegistryError(
-                f"zorunlu suite geçmedi: {required}", status=422, code="eval_regression"
+                f"required suite failed: {required}", status=422, code="eval_regression"
             )
 
 
@@ -284,10 +286,12 @@ def promote_version(
         version = _require_version(tenant, name, semver)
         agent = store.get_agent(tenant, name)
         if agent and agent["retired_at"]:
-            raise RegistryError("emekli ajan terfi ettirilemez", status=409, code="agent_retired")
+            raise RegistryError(
+                "a retired agent cannot be promoted", status=409, code="agent_retired"
+            )
         if version["state"] not in ("validated", "candidate", "active"):
             raise RegistryError(
-                f"terfi için validated/candidate/active durumu gerekli (şu an: {version['state']})",
+                f"promotion requires validated/candidate/active (current: {version['state']})",
                 status=409,
                 code="not_validated",
             )
@@ -367,7 +371,7 @@ def promote_version(
 
     if rejection is not None:
         failures = "; ".join(f"{c.name}: {c.detail}" for c in rejection if not c.passed)
-        raise RegistryError(f"kapı geçmedi — {failures}", status=409, code="gate_failed")
+        raise RegistryError(f"gate failed — {failures}", status=409, code="gate_failed")
 
     final_state = "active" if env == "prod" or version["state"] == "active" else "candidate"
     return {
@@ -410,11 +414,13 @@ def transition(
 def resolve(*, tenant: str, name: str, env: str = "prod") -> dict:
     agent = store.get_agent(tenant, name)
     if not agent:
-        raise RegistryError(f"{tenant}/{name} kayıtlı değil", status=404, code="agent_not_found")
+        raise RegistryError(
+            f"{tenant}/{name} is not registered", status=404, code="agent_not_found"
+        )
     version = store.get_active_deployment(agent["id"], env)
     if not version:
         raise RegistryError(
-            f"{tenant}/{name} için {env} ortamında aktif sürüm yok",
+            f"no active version of {tenant}/{name} in {env}",
             status=404,
             code="no_active_deployment",
         )
@@ -472,10 +478,12 @@ def build_signed_payload(
 def _require_version(tenant: str, name: str, semver: str) -> dict:
     agent = store.get_agent(tenant, name)
     if not agent:
-        raise RegistryError(f"{tenant}/{name} kayıtlı değil", status=404, code="agent_not_found")
+        raise RegistryError(
+            f"{tenant}/{name} is not registered", status=404, code="agent_not_found"
+        )
     version = store.get_version(agent["id"], semver)
     if not version:
-        raise RegistryError(f"sürüm bulunamadı: {semver}", status=404, code="version_not_found")
+        raise RegistryError(f"version not found: {semver}", status=404, code="version_not_found")
     return version
 
 

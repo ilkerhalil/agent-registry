@@ -134,5 +134,5 @@ def test_unreachable_registry_is_reported(live_server, tmp_path):
         cache_dir=tmp_path,
     )
 
-    with pytest.raises(ResolutionError, match="erişilemedi"):
+    with pytest.raises(ResolutionError, match="unreachable"):
         runtime.resolve("claim-triage", env="prod")

@@ -46,7 +46,7 @@ def authenticate(token: str) -> Principal:
     keys = get_settings().api_keys
     if not keys:
         raise AuthError(
-            "kimlik doğrulama yapılandırılmamış (REGISTRY_API_KEYS)",
+            "authentication is not configured (REGISTRY_API_KEYS)",
             status=503,
             code="auth_unconfigured",
         )
@@ -58,13 +58,13 @@ def authenticate(token: str) -> Principal:
                 roles=frozenset(spec.roles),
                 tenants=frozenset(spec.tenants),
             )
-    raise AuthError("geçersiz veya eksik API anahtarı")
+    raise AuthError("invalid or missing API key")
 
 
 def require_role(principal: Principal, *roles: str) -> None:
     if not principal.has_role(*roles):
         raise AuthError(
-            f"bu işlem için yetki yok (gerekli rol: {', '.join(roles)})",
+            f"not allowed for this key (required role: {', '.join(roles)})",
             status=403,
             code="forbidden",
         )
@@ -72,4 +72,4 @@ def require_role(principal: Principal, *roles: str) -> None:
 
 def require_tenant(principal: Principal, tenant: str) -> None:
     if not principal.allows_tenant(tenant):
-        raise AuthError(f"{tenant} kiracısına erişim yok", status=403, code="forbidden_tenant")
+        raise AuthError(f"no access to tenant {tenant}", status=403, code="forbidden_tenant")

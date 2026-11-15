@@ -24,4 +24,4 @@ def check_transition(current: str, target: str) -> None:
     if current not in ALLOWED:
         raise TransitionError(f"bilinmeyen durum: {current}")
     if target not in ALLOWED[current]:
-        raise TransitionError(f"{current} -> {target} geçişine izin yok")
+        raise TransitionError(f"transition {current} -> {target} is not allowed")

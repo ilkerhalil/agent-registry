@@ -59,7 +59,7 @@ def test_cosign_rejects_wrong_prefix(keypair):
     _, pub = keypair
     signer = CosignSigner(pub_key_path=pub, binary=COSIGN)
 
-    with pytest.raises(SignerError, match="biçiminde"):
+    with pytest.raises(SignerError, match="cosign format"):
         signer.verify("payload", "hmac-sha256:abc")
 
 
@@ -75,5 +75,5 @@ def test_hmac_signer_roundtrip():
 
 
 def test_missing_cosign_binary_raises():
-    with pytest.raises(SignerError, match="bulunamadı"):
+    with pytest.raises(SignerError, match="not found"):
         CosignSigner(binary="/nonexistent/cosign", pub_key_path=Path("/tmp/x.pub"))

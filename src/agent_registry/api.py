@@ -45,7 +45,7 @@ class PromoteIn(BaseModel):
 
 def _principal(authorization: str | None = Header(default=None)) -> Principal:
     if not authorization or not authorization.startswith("Bearer "):
-        raise AuthError("Bearer API anahtarı gerekli")
+        raise AuthError("Bearer API key required")
     return authenticate(authorization.removeprefix("Bearer ").strip())
 
 
@@ -308,7 +308,7 @@ def catalog_impact(kind: str, name: str, principal: PrincipalDep):
     """Etki analizi: bu araç/model aktif sürümlerde nerede kullanılıyor?"""
     require_role(principal, "publisher", "security")
     if kind not in ("tools", "models"):
-        raise RegistryError("geçersiz katalog türü", status=404, code="unknown_catalog")
+        raise RegistryError("unknown catalogue kind", status=404, code="unknown_catalog")
     return {"kind": kind, "name": name, "agents": store.agent_versions_using(kind, name)}
 
 
@@ -318,15 +318,15 @@ def metrics(principal: PrincipalDep):
     require_role(principal, "security")
     tenants = store.list_tenants() if "*" in principal.tenants else principal.tenants
     lines = [
-        "# HELP agent_registry_agents_total Kayıtlı ajan sayısı",
+        "# HELP agent_registry_agents_total Registered agents",
         "# TYPE agent_registry_agents_total gauge",
-        "# HELP agent_registry_versions_total Sürüm sayısı (duruma göre)",
+        "# HELP agent_registry_versions_total Versions by state",
         "# TYPE agent_registry_versions_total gauge",
-        "# HELP agent_registry_deployments_total Aktif deployment sayısı (ortama göre)",
+        "# HELP agent_registry_deployments_total Active deployments by env",
         "# TYPE agent_registry_deployments_total gauge",
-        "# HELP agent_registry_stale_active_versions 90 günden uzun süredir aktif kalan sürümler",
+        "# HELP agent_registry_stale_active_versions Versions active for more than 90 days",
         "# TYPE agent_registry_stale_active_versions gauge",
-        "# HELP agent_registry_blocked_versions_total Bloklanmış sürümler",
+        "# HELP agent_registry_blocked_versions_total Blocked versions",
         "# TYPE agent_registry_blocked_versions_total gauge",
     ]
     for tenant in tenants or [None]:

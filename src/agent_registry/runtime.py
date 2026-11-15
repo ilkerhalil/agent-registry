@@ -57,9 +57,9 @@ def _default_fetch(url: str, api_key: str, timeout: float) -> dict:
         detail = exc.read().decode("utf-8", "ignore")[:200]
         raise ResolutionError(f"registry {exc.code}: {detail}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise ResolutionError(f"registry erişilemedi: {exc}") from exc
+        raise ResolutionError(f"registry unreachable: {exc}") from exc
     except json.JSONDecodeError as exc:
-        raise ResolutionError("registry yanıtı JSON değil") from exc
+        raise ResolutionError("registry response is not JSON") from exc
 
 
 class AgentRuntime:
@@ -90,7 +90,7 @@ class AgentRuntime:
         verifier: Signer | None = None,
     ) -> None:
         if not signing_key and verifier is None:
-            raise ResolutionError("doğrulama anahtarı boş olamaz")
+            raise ResolutionError("verification key cannot be empty")
         self.base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._signing_key = signing_key
@@ -138,22 +138,22 @@ class AgentRuntime:
         )
         missing = [key for key in required if key not in payload]
         if missing:
-            raise ResolutionError(f"resolve yanıtı eksik alanlar içeriyor: {', '.join(missing)}")
+            raise ResolutionError(f"resolve response is missing fields: {', '.join(missing)}")
 
         if payload["agent"] != expected_agent or payload["env"] != expected_env:
-            raise ResolutionError("resolve yanıtı istenen ajan/ortamla uyuşmuyor")
+            raise ResolutionError("resolve response does not match the requested agent/env")
         if payload["tenant"] != self.tenant:
-            raise ResolutionError("resolve yanıtı başka kiracıya ait")
+            raise ResolutionError("resolve response belongs to another tenant")
 
         try:
             manifest = AgentManifest.model_validate(payload["manifest"])
         except Exception as exc:  # pydantic doğrulama hatası
-            raise ResolutionError(f"manifest şeması geçersiz: {str(exc)[:160]}") from exc
+            raise ResolutionError(f"manifest schema is invalid: {str(exc)[:160]}") from exc
 
         # İmza yalnız manifest_hash'i kapsar; hash'i manifestten yeniden üretmezsek
         # imza, içeriği değiştirilmiş bir manifesti de doğrular.
         if manifest.sha256() != payload["manifest_hash"]:
-            raise ResolutionError("manifest hash'i yanıttaki hash ile uyuşmuyor")
+            raise ResolutionError("manifest hash does not match the hash in the response")
 
         signed = build_signed_payload(
             agent=payload["agent"],
@@ -166,16 +166,16 @@ class AgentRuntime:
         try:
             self._verifier.verify(signed, payload["signature"])
         except SignerError as exc:
-            raise ResolutionError(f"imza doğrulanamadı: {exc}") from exc
+            raise ResolutionError(f"signature verification failed: {exc}") from exc
 
         try:
             expires_at = datetime.fromisoformat(payload["expires_at"])
         except ValueError as exc:
-            raise ResolutionError("expires_at biçimi geçersiz") from exc
+            raise ResolutionError("expires_at is not a valid timestamp") from exc
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=UTC)
         if expires_at <= datetime.now(UTC):
-            raise ResolutionError("manifestin süresi dolmuş")
+            raise ResolutionError("manifest has expired")
 
         return ResolvedAgent(
             agent=payload["agent"],
@@ -204,17 +204,17 @@ class AgentRuntime:
     def _from_cache(self, name: str, env: str) -> ResolvedAgent:
         path = self._cache_path(name, env)
         if not path.exists():
-            raise ResolutionError("registry erişilemedi ve önbellekte kopya yok")
+            raise ResolutionError("registry unreachable and no cached copy available")
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
-            raise ResolutionError("önbellekteki kopya okunamadı") from exc
+            raise ResolutionError("cached copy could not be read") from exc
 
         # Önbellekteki kopya da aynı doğrulamadan geçer: imza, hash, süre.
         try:
             agent = self._verify(payload, expected_agent=name, expected_env=env)
         except ResolutionError as exc:
-            raise ResolutionError(f"önbellekteki kopya geçersiz: {exc}") from exc
+            raise ResolutionError(f"cached copy is invalid: {exc}") from exc
         return ResolvedAgent(**{**agent.__dict__, "from_cache": True})
 
     def _url(self, name: str, env: str) -> str:

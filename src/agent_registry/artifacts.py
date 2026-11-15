@@ -49,10 +49,10 @@ class FileSystemStore:
 
     def _path(self, key: str) -> Path:
         if not key.startswith("sha256:"):
-            raise ArtifactError(f"geçersiz artefakt anahtarı: {key[:20]}")
+            raise ArtifactError(f"invalid artifact key: {key[:20]}")
         digest = key.removeprefix("sha256:")
         if len(digest) != 64:
-            raise ArtifactError("artefakt anahtarı sha256 uzunluğunda değil")
+            raise ArtifactError("artifact key is not a sha256 digest")
         return self.root / digest[:2] / f"{digest}.json"
 
     def put(self, data: bytes) -> str:
@@ -75,11 +75,11 @@ class FileSystemStore:
     def get(self, key: str) -> bytes:
         path = self._path(key)
         if not path.exists():
-            raise ArtifactError(f"artefakt bulunamadı: {key}")
+            raise ArtifactError(f"artifact not found: {key}")
         data = path.read_bytes()
         # İçerik adresli depoda okuma da doğrulanır.
         if artifact_key(data) != key:
-            raise ArtifactError("artefakt içeriği anahtarıyla uyuşmuyor")
+            raise ArtifactError("artifact content does not match its key")
         return data
 
     def exists(self, key: str) -> bool:
@@ -96,10 +96,10 @@ class S3Store:
 
     def _object_name(self, key: str) -> str:
         if not key.startswith("sha256:"):
-            raise ArtifactError(f"geçersiz artefakt anahtarı: {key[:20]}")
+            raise ArtifactError(f"invalid artifact key: {key[:20]}")
         digest = key.removeprefix("sha256:")
         if len(digest) != 64:
-            raise ArtifactError("artefakt anahtarı sha256 uzunluğunda değil")
+            raise ArtifactError("artifact key is not a sha256 digest")
         return f"{self.prefix}{digest[:2]}/{digest}.json"
 
     def put(self, data: bytes) -> str:
@@ -116,10 +116,10 @@ class S3Store:
         try:
             obj = self.client.get_object(Bucket=self.bucket, Key=self._object_name(key))
         except Exception as exc:  # noqa: BLE001 - istemci hatası tek tipe indirgenir
-            raise ArtifactError(f"artefakt okunamadı: {key}") from exc
+            raise ArtifactError(f"artifact could not be read: {key}") from exc
         data = obj["Body"].read()
         if artifact_key(data) != key:
-            raise ArtifactError("artefakt içeriği anahtarıyla uyuşmuyor")
+            raise ArtifactError("artifact content does not match its key")
         return data
 
     def exists(self, key: str) -> bool:

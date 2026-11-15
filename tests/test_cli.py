@@ -38,7 +38,7 @@ def test_gate_passes_for_valid_manifest(tmp_path, capsys):
 
     out = capsys.readouterr().out
     assert code == 0
-    assert "SONUÇ: GEÇTİ" in out
+    assert "RESULT: PASS" in out
     assert "[PASS]" in out
 
 
@@ -52,7 +52,7 @@ def test_gate_fails_on_unknown_tool(tmp_path, capsys):
     )
 
     assert code == 1
-    assert "KALDI" in capsys.readouterr().out
+    assert "RESULT: FAIL" in capsys.readouterr().out
 
 
 def test_gate_json_output_is_machine_readable(tmp_path, capsys):
@@ -81,7 +81,7 @@ def test_gate_without_eval_result_fails(tmp_path, capsys):
     code = cli.main(["gate", "--manifest", str(manifest), "--no-db"])
 
     assert code == 1
-    assert "KALDI" in capsys.readouterr().out
+    assert "RESULT: FAIL" in capsys.readouterr().out
 
 
 def test_gate_uses_registry_for_conflicts(tmp_path, client):
@@ -119,7 +119,7 @@ def test_agents_lists_inventory(tmp_path, client, capsys):
 
 def test_init_db_applies_schema(capsys):
     assert cli.main(["init-db"]) == 0
-    assert "şema uygulandı" in capsys.readouterr().out
+    assert "schema applied" in capsys.readouterr().out
 
 
 def test_serve_refuses_without_api_keys():

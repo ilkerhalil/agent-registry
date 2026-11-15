@@ -48,21 +48,21 @@ class AgentManifest(BaseModel):
     @classmethod
     def _agent_name(cls, v: str) -> str:
         if not NAME_RE.match(v):
-            raise ValueError("agent adı ^[a-z][a-z0-9-]{2,62}$ kalıbına uymalı")
+            raise ValueError("agent name must match ^[a-z][a-z0-9-]{2,62}$")
         return v
 
     @field_validator("version")
     @classmethod
     def _semver(cls, v: str) -> str:
         if not SEMVER_RE.match(v):
-            raise ValueError("version semver olmalı (örn. 2.3.1)")
+            raise ValueError("version must be semver, e.g. 2.3.1")
         return v
 
     @field_validator("tools", "data_scopes")
     @classmethod
     def _unique(cls, v: list[str]) -> list[str]:
         if len(set(v)) != len(v):
-            raise ValueError("tekrarlanan kayıt var")
+            raise ValueError("duplicate entry")
         return v
 
     def canonical_json(self) -> str:

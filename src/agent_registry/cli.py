@@ -24,14 +24,15 @@ def _load_json_or_yaml(path: str) -> dict:
 
 def cmd_init_db(_args) -> int:
     init_schema()
-    print("şema uygulandı")
+    print("schema applied")
     return 0
 
 
 def cmd_serve(args) -> int:
     if not get_settings().api_keys:
         print(
-            "hata: REGISTRY_API_KEYS tanımlı değil; sunucu kimlik doğrulamasız başlatılamaz",
+            "error: REGISTRY_API_KEYS is not set; "
+            "the server refuses to start without authentication",
             file=sys.stderr,
         )
         return 2
@@ -55,7 +56,7 @@ def cmd_gate(args) -> int:
                 conflicts = store.active_scopes_by_team(tenant)
             except Exception as exc:  # DB yoksa kapı DB'siz koşar ama uyarır
                 print(
-                    f"uyarı: registry'ye erişilemedi, çakışma kontrolü atlandı ({exc})",
+                    f"warning: registry unreachable, scope-conflict check skipped ({exc})",
                     file=sys.stderr,
                 )
 
@@ -72,7 +73,7 @@ def cmd_gate(args) -> int:
         for c in checks:
             mark = "PASS" if c.passed else "FAIL"
             print(f"[{mark}] {c.name:16} {c.detail}")
-        print("\nSONUÇ:", "GEÇTİ" if ok else "KALDI")
+        print("\nRESULT:", "PASS" if ok else "FAIL")
     return 0 if ok else 1
 
 
@@ -88,21 +89,21 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="agent-registry", description="Agent Registry CLI")
     sub = p.add_subparsers(dest="command", required=True)
 
-    s = sub.add_parser("serve", help="API sunucusunu başlat")
+    s = sub.add_parser("serve", help="start the API server")
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8100)
     s.add_argument("--reload", action="store_true")
     s.set_defaults(func=cmd_serve)
 
-    s = sub.add_parser("init-db", help="şemayı uygula")
+    s = sub.add_parser("init-db", help="apply the schema")
     s.set_defaults(func=cmd_init_db)
 
-    s = sub.add_parser("gate", help="CI kapısı: manifesti yedi kontrolden geçir")
+    s = sub.add_parser("gate", help="CI gate: run the seven checks on a manifest")
     s.add_argument("--manifest", required=True)
     s.add_argument("--eval-result")
     s.add_argument("--catalog-dir", default="./catalogs")
     s.add_argument("--json", action="store_true")
-    s.add_argument("--no-db", action="store_true", help="çakışma kontrolünü atla")
+    s.add_argument("--no-db", action="store_true", help="skip the scope-conflict check")
     s.set_defaults(func=cmd_gate)
 
     s = sub.add_parser("agents", help="envanter")

@@ -31,7 +31,7 @@ class Signer(Protocol):
 class HmacSigner:
     def __init__(self, key: str) -> None:
         if not key:
-            raise SignerError("imzalama anahtarı boş olamaz")
+            raise SignerError("signing key cannot be empty")
         self.key = key
 
     def sign(self, payload: str) -> str:
@@ -59,7 +59,7 @@ class CosignSigner:
     ) -> None:
         self.binary = binary or os.environ.get("COSIGN_BIN") or "cosign"
         if not shutil.which(self.binary) and not Path(self.binary).exists():
-            raise SignerError(f"cosign bulunamadı: {self.binary}")
+            raise SignerError(f"cosign not found: {self.binary}")
         self.key_path = Path(key_path) if key_path else None
         self.pub_key_path = Path(pub_key_path) if pub_key_path else None
         self.password = password or os.environ.get("COSIGN_PASSWORD", "")
@@ -77,7 +77,7 @@ class CosignSigner:
 
     def sign(self, payload: str) -> str:
         if not self.key_path:
-            raise SignerError("imzalamak için özel anahtar gerekli")
+            raise SignerError("a private key is required to sign")
         with tempfile.TemporaryDirectory() as td:
             blob = Path(td) / "payload.json"
             bundle = Path(td) / "bundle.json"
@@ -96,19 +96,19 @@ class CosignSigner:
                 ]
             )
             if result.returncode != 0:
-                raise SignerError(f"cosign sign-blob başarısız: {result.stderr[:200]}")
+                raise SignerError(f"cosign sign-blob failed: {result.stderr[:200]}")
             raw = bundle.read_bytes()
         return COSIGN_PREFIX + base64.b64encode(raw).decode("ascii")
 
     def verify(self, payload: str, signature: str) -> None:
         if not signature.startswith(COSIGN_PREFIX):
-            raise SignerError("imza cosign biçiminde değil")
+            raise SignerError("signature is not in cosign format")
         if not self.pub_key_path:
-            raise SignerError("doğrulamak için açık anahtar gerekli")
+            raise SignerError("a public key is required to verify")
         try:
             raw = base64.b64decode(signature.removeprefix(COSIGN_PREFIX))
         except Exception as exc:  # noqa: BLE001
-            raise SignerError("imza çözülemedi") from exc
+            raise SignerError("signature could not be decoded") from exc
         with tempfile.TemporaryDirectory() as td:
             blob = Path(td) / "payload.json"
             bundle = Path(td) / "bundle.json"
@@ -118,7 +118,7 @@ class CosignSigner:
                 ["verify-blob", "--key", str(self.pub_key_path), "--bundle", str(bundle), str(blob)]
             )
         if result.returncode != 0:
-            raise SignerError(f"cosign verify-blob başarısız: {result.stderr[:200]}")
+            raise SignerError(f"cosign verify-blob failed: {result.stderr[:200]}")
 
 
 def get_signer(settings) -> Signer:

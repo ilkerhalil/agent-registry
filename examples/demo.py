@@ -1,11 +1,11 @@
-"""Uçtan uca demo: kayıt → sürüm → eval → terfi → imzalı resolve → denetim.
+"""End-to-end demo: register → version → eval → promote → signed resolve → audit.
 
-Çalıştırma:
+Run:
     docker compose up -d db
     uv run python examples/demo.py
 
-Demo gerçek Postgres'e yazar; tekrar çalıştırıldığında aynı ajan adını
-kullanmaz (her çalıştırmada yeni bir sürüm numarası üretir).
+The demo writes to a real Postgres. It never reuses a version number, so it is
+safe to run repeatedly against the same database.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ def main() -> int:
     version = f"2.3.{int(datetime.now(UTC).timestamp()) % 1000}"
     manifest["version"] = version
 
-    step("1. Ajan kaydı")
+    step("1. Register the agent")
     res = client.post(
         "/v1/agents",
         headers=PUB,
@@ -71,18 +71,18 @@ def main() -> int:
             "name": AGENT,
             "tenant": "denizbank",
             "owner_team": "hasar-operasyon",
-            "purpose": "Hasar ihbarını branşa ve uzmanlığa yönlendirir",
+            "purpose": "Routes a claim notification to the right branch and specialist",
             "criticality": "high",
             "data_classification": "confidential",
         },
     )
     if res.status_code == 409:
-        ok("ajan zaten kayıtlı — devam")
+        ok("agent already registered — continuing")
     else:
         assert res.status_code == 201, res.text
-        ok("ajan kaydedildi")
+        ok("agent registered")
 
-    step(f"2. Sürüm {version} (değişmez manifest)")
+    step(f"2. Version {version} (immutable manifest)")
     res = client.post(
         f"/v1/agents/denizbank/{AGENT}/versions",
         headers=PUB,
@@ -91,31 +91,31 @@ def main() -> int:
     assert res.status_code in (200, 201), res.text
     ok(f"manifest_hash {res.json()['manifest_hash'][:24]}…")
 
-    step("3. Eval sonucu + doğrulama")
+    step("3. Eval result + validation")
     res = client.post(
         f"/v1/agents/denizbank/{AGENT}/versions/{version}:validate",
         headers=PUB,
         json=evals,
     )
     assert res.status_code == 200, res.text
-    ok(f"eval geçti · success_rate {evals['success_rate']}")
+    ok(f"eval passed · success_rate {evals['success_rate']}")
 
-    step("4. Terfi (kapı sunucuda yeniden koşar)")
+    step("4. Promote (the gate re-runs server-side)")
     res = client.post(
         f"/v1/agents/denizbank/{AGENT}/versions/{version}:promote",
         headers=PUB,
         json={"env": ENV},
     )
     assert res.status_code == 200, res.text
-    ok(f"{ENV} ortamında aktif")
+    ok(f"active in {ENV}")
 
-    step("5. Runtime resolve — imzalı manifest")
+    step("5. Runtime resolve — signed manifest")
     res = client.get(f"/v1/agents/denizbank/{AGENT}/resolve?env={ENV}", headers=RUN)
     assert res.status_code == 200, res.text
     payload = res.json()
-    ok(f"version {payload['version']} · imza {payload['signature'][:22]}…")
+    ok(f"version {payload['version']} · signature {payload['signature'][:22]}…")
 
-    step("6. Runtime SDK doğrulaması")
+    step("6. Runtime SDK verification")
 
     def fetch(url: str, api_key: str, timeout: float) -> dict:
         path = url.split("registry.demo", 1)[1]
@@ -132,25 +132,25 @@ def main() -> int:
         fetch=fetch,
     )
     agent = runtime.resolve(AGENT, env=ENV)
-    ok(f"SDK imzayı doğruladı · {agent.agent}@{agent.version}")
+    ok(f"SDK verified the signature · {agent.agent}@{agent.version}")
 
     tampered = json.loads(json.dumps(payload))
     tampered["manifest"]["data_scopes"] = ["claims:read", "*:*"]
     try:
         runtime._verify(tampered, expected_agent=AGENT, expected_env=ENV)
     except ResolutionError as exc:
-        ok(f"kurcalanmış manifest reddedildi → {exc}")
+        ok(f"tampered manifest rejected → {exc}")
     else:
-        print("  ✗ kurcalanmış manifest kabul edildi!")
+        print("  x tampered manifest was accepted — this is a bug")
         return 1
 
-    step("7. Denetim izi (append-only)")
+    step("7. Audit trail (append-only)")
     res = client.get("/v1/audit?limit=5", headers=SEC)
     assert res.status_code == 200, res.text
     for event in res.json()["events"][:5]:
         print(f"  · {event.get('action', '?'):<28} {event.get('object_type', '')}")
 
-    print("\nDemo tamam: kayıt → sürüm → eval → terfi → imzalı resolve → denetim.\n")
+    print("\nDone: register → version → eval → promote → signed resolve → audit.\n")
     return 0
 
 

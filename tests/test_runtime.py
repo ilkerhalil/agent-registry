@@ -98,14 +98,14 @@ def test_rejects_tampered_manifest(tmp_path):
 def test_rejects_wrong_signing_key(tmp_path):
     runtime = make_runtime(tmp_path, lambda url, key, timeout: make_payload(key="baska-anahtar"))
 
-    with pytest.raises(ResolutionError, match="imza"):
+    with pytest.raises(ResolutionError, match="signature"):
         runtime.resolve("claim-triage")
 
 
 def test_rejects_expired_manifest(tmp_path):
     runtime = make_runtime(tmp_path, lambda url, key, timeout: make_payload(expires_in=-60))
 
-    with pytest.raises(ResolutionError, match="süresi"):
+    with pytest.raises(ResolutionError, match="expired"):
         runtime.resolve("claim-triage")
 
 
@@ -145,7 +145,7 @@ def test_expired_cache_is_not_used(tmp_path):
     def offline(url, key, timeout):
         raise ResolutionError("registry erişilemedi: bağlantı yok")
 
-    with pytest.raises(ResolutionError, match="önbellekteki"):
+    with pytest.raises(ResolutionError, match="cached copy"):
         make_runtime(tmp_path, offline).resolve("claim-triage")
 
 
@@ -153,5 +153,5 @@ def test_no_cache_and_registry_down_fails(tmp_path):
     def offline(url, key, timeout):
         raise ResolutionError("registry erişilemedi: bağlantı yok")
 
-    with pytest.raises(ResolutionError, match="önbellekte"):
+    with pytest.raises(ResolutionError, match="no cached copy"):
         make_runtime(tmp_path, offline).resolve("claim-triage")

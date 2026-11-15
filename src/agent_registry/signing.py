@@ -21,14 +21,14 @@ class SignatureError(SignerError):
 
 def sign(payload: str, key: str) -> str:
     if not key:
-        raise SignatureError("imzalama anahtarı boş olamaz")
+        raise SignatureError("signing key cannot be empty")
     digest = hmac.new(key.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
     return PREFIX + digest
 
 
 def verify(payload: str, signature: str, key: str) -> None:
     if not signature or not signature.startswith(PREFIX):
-        raise SignatureError("imza biçimi geçersiz")
+        raise SignatureError("signature format is invalid")
     expected = sign(payload, key)
     if not hmac.compare_digest(expected, signature):
-        raise SignatureError("imza doğrulanamadı")
+        raise SignatureError("signature does not match the payload")

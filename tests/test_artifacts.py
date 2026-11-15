@@ -45,7 +45,7 @@ def test_get_detects_tampered_artifact(tmp_path):
     path = store._path(key)
     path.write_bytes(canonical_bytes({"success_rate": 0.99}))
 
-    with pytest.raises(ArtifactError, match="anahtarıyla uyuşmuyor"):
+    with pytest.raises(ArtifactError, match="does not match its key"):
         store.get(key)
 
 
@@ -53,7 +53,7 @@ def test_missing_artifact_raises(tmp_path):
     store = FileSystemStore(tmp_path)
     missing = artifact_key(b"yok")
 
-    with pytest.raises(ArtifactError, match="bulunamadı"):
+    with pytest.raises(ArtifactError, match="not found"):
         store.get(missing)
 
 
@@ -110,5 +110,5 @@ def test_s3_store_detects_corruption():
     key = store.put(canonical_bytes({"a": 1}))
     client.objects[store._object_name(key)] = canonical_bytes({"a": 2})
 
-    with pytest.raises(ArtifactError, match="anahtarıyla uyuşmuyor"):
+    with pytest.raises(ArtifactError, match="does not match its key"):
         store.get(key)
