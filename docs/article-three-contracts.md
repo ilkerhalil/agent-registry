@@ -49,7 +49,7 @@ signature over that hash.
 
 ```python
 agent = runtime.resolve("claim-triage", env="prod")
-agent.manifest_obj.data_scopes   # only reachable if the local hash matched
+agent.manifest_obj.data_scopes  # only reachable if the local hash matched
 ```
 
 The same contract covers the failure modes people forget to design for:
