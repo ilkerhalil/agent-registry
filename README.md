@@ -18,7 +18,7 @@ promotion is gated, resolution is signed, and the audit trail is append-only at 
 ## How it fits together
 
 ```
-   manifest.yaml ──► CI gate (7 checks) ──► registry ──► promote (gate re-runs server-side)
+   manifest.yaml ──► CI gate (8 checks) ──► registry ──► promote (gate re-runs server-side)
    in your repo                             │  immutable versions, deployments, audit
                                             │
    agent process ◄── verified manifest ◄── resolve ◄── signed response
@@ -174,7 +174,7 @@ agent.manifest_obj.data_scopes  # what this version may actually reach
 If the registry is unreachable, the SDK falls back to the last verified copy on disk — but only until
 its `expires_at` passes. Expired, unsigned or tampered: the agent does not start.
 
-## The gate — 7 checks
+## The gate — 8 checks
 
 The same gate runs in your CI and again **server-side on promotion**. A client claiming "the gate
 passed" is not trusted.
@@ -182,12 +182,13 @@ passed" is not trusted.
 | # | Check | It stops |
 |---|---|---|
 | 1 | Manifest schema valid | malformed manifests reaching production |
-| 2 | Eval thresholds met, no regression against the active version | "it feels better" promotions |
-| 3 | `data_scopes` ⊆ owning team's allow-list | a version quietly widening its access |
-| 4 | Every tool is in the tool catalogue | agents calling tools nobody owns |
-| 5 | Every model in `model_policy` is in the model catalogue | shadow models |
-| 6 | Owning team defined, on-call known | orphaned agents with no one to page |
-| 7 | No scope conflict with the active version | two versions fighting over the same scope |
+| 2 | Eval evidence complete — case counts, dataset hash, harness version, timestamps — and signed when the deployment requires it | a `success_rate` typed by hand |
+| 3 | Eval thresholds met, no regression against the active version | "it feels better" promotions |
+| 4 | `data_scopes` ⊆ owning team's allow-list | a version quietly widening its access |
+| 5 | Every tool is in the tool catalogue | agents calling tools nobody owns |
+| 6 | Every model in `model_policy` is in the model catalogue | shadow models |
+| 7 | Owning team defined, on-call known | orphaned agents with no one to page |
+| 8 | No scope conflict with the active version | two versions fighting over the same scope |
 
 Run it locally, exactly as CI does:
 
@@ -198,6 +199,7 @@ uv run agent-registry gate --manifest examples/claim-triage.manifest.yaml \
 
 ```
 [PASS] manifest_schema  claim-triage@2.3.1
+[PASS] eval_evidence    300 cases · sha256:7b1e4c9a2f8d35… · evalkit-1.3.0 · unsigned, not required
 [PASS] eval             0.947 ≥ 0.920
 [PASS] data_scopes      all scopes allowed
 [PASS] team             on-call: hasar-nobet
@@ -207,6 +209,56 @@ uv run agent-registry gate --manifest examples/claim-triage.manifest.yaml \
 
 RESULT: PASS
 ```
+
+### Eval evidence — a number is not proof
+
+A bare `success_rate` can be typed by anyone, so the gate demands the surrounding facts as well:
+
+```json
+{
+  "suite": "claim-triage-v4",
+  "success_rate": 0.947,
+  "total_cases": 300,
+  "dataset_hash": "sha256:7b1e4c9a2f8d35e60c1b7a94d2f8e31c…",
+  "harness_version": "evalkit-1.3.0",
+  "started_at": "2026-11-14T09:12:03Z",
+  "finished_at": "2026-11-14T09:41:27Z",
+  "suites": {
+    "regression-core": {"passed": true, "success_rate": 0.95, "total_cases": 150},
+    "adversarial":     {"passed": true, "success_rate": 0.944, "total_cases": 150}
+  }
+}
+```
+
+Every field is required, timestamps must carry a timezone and move forward, and the per-suite case
+counts must add up to `total_cases`. Missing evidence fails the gate before any threshold is
+discussed — and because the payload is stored content-addressed, the evidence cannot be edited
+afterwards.
+
+**Signing it closes the remaining hole.** A number you accept on trust is a number anyone can write;
+an attestation makes the producer prove it holds the key:
+
+```python
+from agent_registry.eval_attestation import build_attestation
+from agent_registry.signers import get_signer
+
+payload = {..., "suite": "claim-triage-v4", "success_rate": 0.947}
+payload["attestation"] = build_attestation(payload, get_signer(settings))
+```
+
+The signature covers the canonical payload with the `attestation` field removed, so changing a single
+digit afterwards breaks it — including at promotion time, when the gate re-verifies what was stored.
+Turn enforcement on for production deployments:
+
+```bash
+EVAL_REQUIRE_ATTESTATION=true uv run agent-registry serve
+uv run agent-registry gate --manifest ... --eval-result ... --require-attestation
+```
+
+What this does **not** do: the registry still does not run evaluations. It guarantees that the
+evidence is complete, self-consistent, bound to the manifest's suite, immutable, and — when signing
+is required — produced by a holder of the signing key. If you need the gate to be the evaluator, that
+is a different product; see the note in `PLAN.md`.
 
 ## Signing: HMAC now, Cosign when you need it
 
@@ -255,12 +307,12 @@ eval artifacts, cosign for signatures, Prometheus for metrics.
 ## Tests
 
 ```bash
-uv run pytest                                   # 99 tests; 5 skip when cosign is absent
+uv run pytest                                   # 126 tests; 5 skip when cosign is absent
 uv run pytest --cov=src/agent_registry          # report; CI fails under 80%
 COSIGN_BIN=$(command -v cosign) uv run pytest   # run the cosign tests too
 ```
 
-99 tests, 92.6% line coverage, CI green on every push. Deliberately not split by marker:
+126 tests, 93.1% line coverage, CI green on every push. Deliberately not split by marker:
 
 - **Pure unit** — `manifest`, `signing`, `signers`, `states`, `gate`, `artifacts` with a fake S3 client.
 - **Integration** — everything else against a real Postgres, schema applied per session, tables
@@ -282,9 +334,11 @@ src/agent_registry/
   api.py        FastAPI routes, auth, error mapping
   runtime.py    client SDK: verify locally, TTL cache, offline fallback
   artifacts.py  content-addressed eval artifacts (filesystem + S3)
-  gate.py       7 checks over catalogues
+  gate.py       8 checks over catalogues
+  eval_result.py     eval evidence: required fields, consistency
+  eval_attestation.py signed eval results (canonical hash + signature)
   cli.py        serve, init-db, gate, agents
-tests/          99 tests (unit, Postgres integration, real HTTP, concurrency, examples)
+tests/          126 tests (unit, Postgres integration, real HTTP, concurrency, examples)
 examples/       demo.py, example manifest + eval result
 catalogs/       tools.yaml, models.yaml, teams.yaml
 ```

@@ -11,6 +11,7 @@ from . import store
 from .config import get_settings
 from .db import close_pool, init_schema
 from .gate import gate_passed, load_catalogs, run_gate
+from .signers import get_signer
 
 
 def _load_json_or_yaml(path: str) -> dict:
@@ -60,7 +61,17 @@ def cmd_gate(args) -> int:
                     file=sys.stderr,
                 )
 
-    checks = run_gate(manifest, eval_result, catalogs, conflicts)
+    require_attestation = args.require_attestation or get_settings().eval_require_attestation
+    signer = get_signer(get_settings()) if require_attestation else None
+
+    checks = run_gate(
+        manifest,
+        eval_result,
+        catalogs,
+        conflicts,
+        signer=signer,
+        require_attestation=require_attestation,
+    )
     ok = gate_passed(checks)
 
     if args.json:
@@ -98,12 +109,17 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("init-db", help="apply the schema")
     s.set_defaults(func=cmd_init_db)
 
-    s = sub.add_parser("gate", help="CI gate: run the seven checks on a manifest")
+    s = sub.add_parser("gate", help="CI gate: run the eight checks on a manifest")
     s.add_argument("--manifest", required=True)
     s.add_argument("--eval-result")
     s.add_argument("--catalog-dir", default="./catalogs")
     s.add_argument("--json", action="store_true")
     s.add_argument("--no-db", action="store_true", help="skip the scope-conflict check")
+    s.add_argument(
+        "--require-attestation",
+        action="store_true",
+        help="reject eval results that are not signed",
+    )
     s.set_defaults(func=cmd_gate)
 
     s = sub.add_parser("agents", help="envanter")

@@ -1,4 +1,4 @@
-"""CI kapısı — yedi kontrol. DB'den bağımsız, test edilebilir."""
+"""CI kapısı — sekiz kontrol. DB'den bağımsız, test edilebilir."""
 
 from __future__ import annotations
 
@@ -9,7 +9,10 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
+from .eval_attestation import EvalAttestationError, verify_attestation
+from .eval_result import EvalEvidenceError, parse_eval_result
 from .manifest import AgentManifest
+from .signers import Signer
 
 
 @dataclass
@@ -54,6 +57,8 @@ def run_gate(
     conflicts: list[dict] | None = None,
     baseline: dict | None = None,
     max_regression: float = 0.02,
+    signer: Signer | None = None,
+    require_attestation: bool = False,
 ) -> list[Check]:
     checks: list[Check] = []
 
@@ -70,10 +75,34 @@ def run_gate(
         checks.append(Check("manifest_schema", False, f"{first['loc']}: {first['msg']}"))
         return checks  # şema yoksa gerisi anlamsız
 
-    # 2 — eval eşikleri
+    # 2 — eval kanıtı: çıplak sayı yetmez
     if not eval_result:
-        checks.append(Check("eval", False, "eval sonucu verilmedi"))
+        checks.append(Check("eval_evidence", False, "no eval result supplied"))
+        checks.append(Check("eval", False, "no eval result supplied"))
     else:
+        try:
+            evidence = parse_eval_result(eval_result)
+        except EvalEvidenceError as exc:
+            checks.append(Check("eval_evidence", False, str(exc)))
+        else:
+            attestation_problems = []
+            try:
+                verify_attestation(eval_result, signer, required=require_attestation)
+            except EvalAttestationError as exc:
+                attestation_problems.append(str(exc))
+            signed = "signed" if eval_result.get("attestation") else "unsigned, not required"
+            detail = (
+                f"{evidence.total_cases} cases · {evidence.dataset_hash[:21]}… · "
+                f"{evidence.harness_version} · {signed}"
+            )
+            checks.append(
+                Check(
+                    "eval_evidence",
+                    not attestation_problems,
+                    "; ".join(attestation_problems) or detail,
+                )
+            )
+
         problems = []
         if eval_result.get("suite") != m.evals.suite:
             problems.append(f"suite mismatch ({eval_result.get('suite')} != {m.evals.suite})")

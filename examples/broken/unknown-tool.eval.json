@@ -2,10 +2,15 @@
   "suite": "invoice-audit-v1",
   "success_rate": 0.9,
   "total_cases": 120,
+  "dataset_hash": "sha256:1a5c8e3f7b2d904e6a1c5f8b3d7e2a904c6f1b8d5e3a7c2f9b4d6e0a8c5f3b1d",
+  "harness_version": "evalkit-1.3.0",
+  "started_at": "2026-11-14T11:00:00Z",
+  "finished_at": "2026-11-14T11:22:31Z",
   "suites": {
     "regression-core": {
       "passed": true,
-      "success_rate": 0.9
+      "success_rate": 0.9,
+      "total_cases": 120
     }
   }
 }

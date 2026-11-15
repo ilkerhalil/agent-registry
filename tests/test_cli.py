@@ -72,7 +72,7 @@ def test_gate_json_output_is_machine_readable(tmp_path, capsys):
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["passed"] is True
-    assert len(payload["checks"]) == 7
+    assert len(payload["checks"]) == 8
 
 
 def test_gate_without_eval_result_fails(tmp_path, capsys):

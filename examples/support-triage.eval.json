@@ -2,8 +2,20 @@
   "suite": "support-triage-v2",
   "success_rate": 0.931,
   "total_cases": 250,
+  "dataset_hash": "sha256:2f9d8c1e6a4b70d35e8f1c2a9b6d4e7f0a3c5b8d1e9f2a6c4b7d0e3f5a8c1b9d",
+  "harness_version": "evalkit-1.3.0",
+  "started_at": "2026-11-14T10:05:44Z",
+  "finished_at": "2026-11-14T10:38:02Z",
   "suites": {
-    "regression-core": {"passed": true, "success_rate": 0.92},
-    "adversarial": {"passed": true, "success_rate": 0.88}
+    "regression-core": {
+      "passed": true,
+      "success_rate": 0.94,
+      "total_cases": 150
+    },
+    "adversarial": {
+      "passed": true,
+      "success_rate": 0.9175,
+      "total_cases": 100
+    }
   }
 }

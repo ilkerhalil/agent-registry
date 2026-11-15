@@ -8,6 +8,8 @@ from . import store
 from .artifacts import FileSystemStore, canonical_bytes
 from .config import get_settings
 from .db import transaction
+from .eval_attestation import EvalAttestationError, verify_attestation
+from .eval_result import EvalEvidenceError, parse_eval_result
 from .gate import gate_passed, load_catalogs, run_gate
 from .manifest import AgentManifest
 from .signers import get_signer
@@ -184,6 +186,23 @@ def validate_version(
 
 
 def _check_eval_gates(manifest: AgentManifest, eval_result: dict) -> None:
+    """Kanıt, imza, eşik. Sıra önemli: kanıtsız bir sayının eşiği konuşulmaz."""
+    try:
+        parse_eval_result(eval_result)
+    except EvalEvidenceError as exc:
+        raise RegistryError(
+            f"eval evidence missing: {exc}", status=422, code="eval_evidence"
+        ) from exc
+
+    try:
+        verify_attestation(
+            eval_result,
+            get_signer(get_settings()),
+            required=get_settings().eval_require_attestation,
+        )
+    except EvalAttestationError as exc:
+        raise RegistryError(str(exc), status=422, code="eval_attestation") from exc
+
     suite = eval_result.get("suite")
     if suite != manifest.evals.suite:
         raise RegistryError(
@@ -203,7 +222,7 @@ def _check_eval_gates(manifest: AgentManifest, eval_result: dict) -> None:
         outcome = suites.get(required)
         if not outcome:
             raise RegistryError(
-                f"zorunlu suite eksik: {required}", status=422, code="eval_missing_suite"
+                f"required suite missing: {required}", status=422, code="eval_missing_suite"
             )
         if not outcome.get("passed"):
             raise RegistryError(
@@ -251,13 +270,16 @@ def _evaluate_gate(tenant: str, manifest: AgentManifest, version: dict) -> list:
     catalogs = load_catalog_data()
     conflicts = store.active_scopes_by_team(tenant)
     baseline = _baseline_eval(version["agent_id"], exclude_version_id=version["id"])
+    settings = get_settings()
     return run_gate(
         manifest,
         version.get("eval_result"),
         catalogs,
         conflicts,
         baseline=baseline,
-        max_regression=get_settings().eval_max_regression,
+        max_regression=settings.eval_max_regression,
+        signer=get_signer(settings),
+        require_attestation=settings.eval_require_attestation,
     )
 
 

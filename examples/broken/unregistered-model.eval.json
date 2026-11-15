@@ -2,10 +2,15 @@
   "suite": "summarizer-v3",
   "success_rate": 0.85,
   "total_cases": 90,
+  "dataset_hash": "sha256:4d7f2a9c1e6b830d5a2f9c4e7b1d6a380f5c2b9e4d7a1f6c3b8e5d2a9f4c7b1e",
+  "harness_version": "evalkit-1.2.4",
+  "started_at": "2026-11-14T12:10:09Z",
+  "finished_at": "2026-11-14T12:19:44Z",
   "suites": {
     "regression-core": {
       "passed": true,
-      "success_rate": 0.85
+      "success_rate": 0.85,
+      "total_cases": 90
     }
   }
 }

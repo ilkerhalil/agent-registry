@@ -1,6 +1,6 @@
 """REST API — yedi uç nokta."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -32,11 +32,8 @@ class VersionCreate(BaseModel):
     git_commit: str | None = None
 
 
-class EvalResultIn(BaseModel):
-    suite: str
-    success_rate: float
-    suites: dict[str, dict] = Field(default_factory=dict)
-    total_cases: int | None = None
+# Eval gövdesi bilinçli olarak ham dict: kanıt kuralları eval_result.py'de tek yerde
+# yaşıyor. Pydantic modeli kullanınca `dataset_hash` gibi alanlar sessizce düşüyordu.
 
 
 class PromoteIn(BaseModel):
@@ -141,7 +138,7 @@ def validate_version(
     tenant: str,
     name: str,
     semver: str,
-    body: EvalResultIn,
+    body: dict[str, Any],
     principal: PrincipalDep,
 ):
     require_role(principal, "publisher")
@@ -150,7 +147,7 @@ def validate_version(
         tenant=tenant,
         name=name,
         semver=semver,
-        eval_result=body.model_dump(),
+        eval_result=body,
         actor=principal.actor,
     )
 

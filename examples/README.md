@@ -32,6 +32,10 @@ uv run python examples/runtime_offline.py   # no database, no server
 PUB_KEY=pub-1 RT_KEY=rt-1 bash examples/http_walkthrough.sh
 ```
 
+Every eval file carries the full evidence set — case counts, dataset hash, harness version,
+timestamps — because the gate refuses a bare `success_rate`. Run any of them with
+`--require-attestation` and an unsigned result fails on `eval_evidence`.
+
 `tests/test_examples.py` keeps these honest: the green manifests must keep passing and every
 `broken/` file must keep failing on the check its comment names. If a gate rule changes, these
 examples fail the test suite instead of quietly becoming wrong documentation.

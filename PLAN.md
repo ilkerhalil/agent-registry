@@ -151,6 +151,7 @@ tablosuna `rejected` kaydı ve `audit_event`'e `version.promote_rejected` yazıl
 | M2 | Araç/model kataloglarının registry'ye taşınması + etki analizi | **TAMAM** |
 | M3 | Cosign imza backend'i + runtime SDK (`resolve` istemcisi) | **TAMAM** |
 | M4 | Metrikler (durum dağılımı, deployment, bayat, bloklu), Prometheus | **TAMAM** |
+| M6 | Eval kanıtı (zorunlu alanlar) + imzalı eval (attestation) | **TAMAM** (126 test) |
 | M5 | Test katmanları: CLI, gerçek HTTP, eşzamanlılık, CI'da cosign + kapsam eşiği | **TAMAM** |
 
 ## Riskler

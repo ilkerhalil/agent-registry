@@ -2,8 +2,20 @@
   "suite": "kb-rag-v1",
   "success_rate": 0.902,
   "total_cases": 180,
+  "dataset_hash": "sha256:9c4a6f2b8d1e5a703f2c9b6d8e4a1f5c7b3d0e9a6c2f4b8d1e7a5c3f0b9d6e2a",
+  "harness_version": "evalkit-1.2.4",
+  "started_at": "2026-11-13T16:20:11Z",
+  "finished_at": "2026-11-13T16:44:58Z",
   "suites": {
-    "citation-grounding": {"passed": true, "success_rate": 0.95},
-    "adversarial": {"passed": true, "success_rate": 0.84}
+    "citation-grounding": {
+      "passed": true,
+      "success_rate": 0.95,
+      "total_cases": 90
+    },
+    "adversarial": {
+      "passed": true,
+      "success_rate": 0.854,
+      "total_cases": 90
+    }
   }
 }

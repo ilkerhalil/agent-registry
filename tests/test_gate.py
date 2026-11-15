@@ -11,7 +11,7 @@ def test_full_pass():
     checks = run_gate(MANIFEST, EVAL, CATALOGS, conflicts=[])
     failed = [c for c in checks if not c.passed]
     assert not failed, failed
-    assert len(checks) == 7
+    assert len(checks) == 8
 
 
 def test_unknown_tool_fails():

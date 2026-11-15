@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     artifact_dir: str = "./artifacts"
     # Yeni sürümün eval başarı oranı, aktif sürümün altına bu kadar düşemez.
     eval_max_regression: float = 0.02
+    eval_require_attestation: bool = False
     api_keys: dict[str, ApiKey] = Field(default_factory=dict, validation_alias="REGISTRY_API_KEYS")
 
 
