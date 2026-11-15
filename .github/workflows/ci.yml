@@ -38,6 +38,12 @@ jobs:
       - name: Install
         run: uv sync --extra dev
 
+      # Cosign testleri ikili yoksa atlanıyor; CI'da atlanmasın.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: "v2.4.1"
+
       - name: Lint
         run: uv run ruff check .
 
@@ -45,4 +51,4 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Tests
-        run: uv run pytest -q -p no:warnings
+        run: uv run pytest -q -p no:warnings --cov=src/agent_registry --cov-fail-under=80

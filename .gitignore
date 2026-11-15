@@ -9,3 +9,7 @@ dist/
 build/
 .demo-cache/
 .claude/
+.coverage
+artifacts/
+*.sqlite
+

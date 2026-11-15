@@ -108,8 +108,13 @@ class AgentRuntime:
         """İmzalı manifesti çözer. Registry yoksa son geçerli kopyaya düşer."""
         try:
             payload = self._fetch(self._url(name, env), self._api_key, self.timeout)
-        except ResolutionError:
-            return self._from_cache(name, env)
+        except ResolutionError as fetch_error:
+            # Önbellek yoksa asıl sebep kaybolmasın: 401 ile "ağ yok" aynı mesaja
+            # düşerse saha teşhisi imkânsız hâle gelir.
+            try:
+                return self._from_cache(name, env)
+            except ResolutionError as cache_error:
+                raise ResolutionError(f"{fetch_error} · {cache_error}") from fetch_error
 
         agent = self._verify(payload, expected_agent=name, expected_env=env)
         self._write_cache(name, env, payload)

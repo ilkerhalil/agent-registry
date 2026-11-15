@@ -36,7 +36,7 @@ place (new version = new row), a runtime never trusts an unsigned answer, and th
 | Prometheus metrics (versions by state, active deployments, stale, blocked) | |
 | Tool/model/team catalogues stored in the registry, with impact analysis | |
 | Cosign (Sigstore) signing backend next to HMAC; runtime verifies with the public key only | |
-| 78 tests, ruff clean, GitHub Actions CI | |
+| 96 tests, 93% line coverage, ruff clean, CI with Postgres + Cosign | |
 
 ## Try it in one minute
 
@@ -158,6 +158,25 @@ passed is never trusted:
   COSIGN_PASSWORD=... uv run agent-registry serve
   ```
 
+## Tests
+
+```bash
+uv run pytest                                   # 96 tests, 5 skip without cosign
+uv run pytest --cov=src/agent_registry          # coverage report (CI gate: 80%)
+COSIGN_BIN=$(command -v cosign) uv run pytest   # cosign tests actually run
+```
+
+The suite is deliberately not split by marker — the distinction matters more than the label:
+
+- **Pure unit** — `manifest`, `signing`, `signers`, `states`, `gate`, `artifacts` (fake S3 client).
+  No database, no network.
+- **Integration** — everything else runs against a real Postgres (schema applied once per session,
+  tables truncated between tests) through `TestClient`.
+- **Real network** — `test_http_e2e.py` starts uvicorn on a free port and makes the runtime SDK
+  talk to it over HTTP, so auth headers, real JSON and the `urllib` path are exercised.
+- **Concurrency** — `test_concurrency.py` fires two promotions at the same instant and asserts the
+  database leaves exactly one active version.
+
 ## Roadmap
 
 | # | Scope | Status |
@@ -181,17 +200,17 @@ src/agent_registry/
   artifacts.py  content-addressed eval artifacts (filesystem + S3 backends)
   signers.py    signing backends: HMAC-SHA256, Cosign (Sigstore)
   gate.py       7 checks over catalogues
-tests/          78 tests
+tests/          96 tests (unit, Postgres integration, real HTTP, concurrency)
 examples/       demo.py, example manifest + eval result
 catalogs/       tools.yaml, models.yaml, teams.yaml
 ```
 
 ## Status
 
-Early (v0.1). The core loop works end to end and is covered by tests; the API and schema may still
+v0.2. 93% line coverage, CI green on every push. The API and schema may still
 change between minor versions. Issues and design arguments are welcome — especially about where a
 registry should *refuse* to be helpful.
 
 ## License
 
-MIT (to be added with the first public release).
+MIT — see [LICENSE](LICENSE).
